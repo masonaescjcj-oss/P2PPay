@@ -9,12 +9,12 @@ export function TetherMark({ size = 20 }) {
   )
 }
 
-export function StarMark({ size = 34, color = 'var(--gold-text)' }) {
+export function StarMark({ size = 34, color = 'var(--accent-text)' }) {
   return (
     <svg width={size} height={size} viewBox="0 0 34 34" aria-hidden="true">
       <rect x="7" y="7" width="20" height="20" fill="none" stroke={color} strokeWidth="1.6" />
       <rect x="7" y="7" width="20" height="20" fill="none" stroke={color} strokeWidth="1.6" transform="rotate(45 17 17)" />
-      <circle cx="17" cy="17" r="4" fill="var(--gold)" />
+      <circle cx="17" cy="17" r="4" fill="var(--accent)" />
     </svg>
   )
 }
@@ -22,7 +22,7 @@ export function StarMark({ size = 34, color = 'var(--gold-text)' }) {
 export function Wordmark() {
   return (
     <div dir="ltr" style={{ fontSize: 22, fontWeight: 800, letterSpacing: 0.2 }}>
-      P<span style={{ color: 'var(--gold-text)' }}>2</span>PPay
+      P<span style={{ color: 'var(--accent-text)' }}>2</span>PPay
     </div>
   )
 }

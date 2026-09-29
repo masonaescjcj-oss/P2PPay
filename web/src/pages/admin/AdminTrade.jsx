@@ -124,7 +124,7 @@ export default function AdminTrade() {
         <form className="row" style={{ gap: 8 }} onSubmit={send}>
           <label htmlFor="amsg" className="sr-only">{t('messageAsSupport')}</label>
           <div className="input-box sm grow"><input id="amsg" placeholder={t('messageAsSupport')} value={text} onChange={(e) => setText(e.target.value)} maxLength={2000} /></div>
-          <button type="submit" className="icon-btn" style={{ width: 50, height: 50, background: 'var(--gold)', color: 'var(--on-gold)', border: 0 }} aria-label={t('send')} disabled={!text.trim()}><Icon name="send" stroke={2} /></button>
+          <button type="submit" className="icon-btn" style={{ width: 50, height: 50, background: 'var(--accent)', color: 'var(--on-accent)', border: 0 }} aria-label={t('send')} disabled={!text.trim()}><Icon name="send" stroke={2} /></button>
         </form>
       </section>
 

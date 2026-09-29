@@ -44,7 +44,7 @@ export default function Market() {
             <h1 className="h1">{t('market')}</h1>
             <span className="caption"><span dir="ltr">USDT / AFN</span> · {t('marketSub')}</span>
           </div>
-          <Link to="/offers/new" className="icon-btn" aria-label={t('newOffer')} style={{ color: 'var(--gold-text)' }}>
+          <Link to="/offers/new" className="icon-btn" aria-label={t('newOffer')} style={{ color: 'var(--accent-text)' }}>
             <Icon name="plus" stroke={2} />
           </Link>
         </div>

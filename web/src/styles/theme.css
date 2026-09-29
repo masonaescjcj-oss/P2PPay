@@ -1,110 +1,151 @@
-/* Design tokens — "Lapis & Saffron" (dark) and "Ivory & Lapis" (light). */
+/* Design tokens — "Nightfall" (dark, default) and "Daylight" (light).
+   Layout concept: borderless layered surfaces, one indigo brand accent, status colours kept separate.
+   --accent*  brand: primary buttons, links, focus, selection, active tab
+   --gold*    attention (pending, timers, warnings) — amber
+   --green* / --coral*  buy / sell and success / danger;  --blue*  information
+   --hero*    the balance panel gradient (same vivid look in both themes, text stays light) */
 :root,
 [data-theme='dark'] {
   color-scheme: dark;
-  --bg: #080c1c;
-  --bar: #0c1226;
-  --surface: #10172e;
-  --surface-2: #172040;
-  --surface-3: #1e2a52;
-  --sunken: #0b1226;
-  --line: #1c2548;
-  --line-strong: #25305a;
-  --divider: #141c38;
-  --ring: #3a4474;
+  --bg: #0a0a0d;
+  --bar: rgb(20 20 25 / 0.9);
+  --surface: #16161b;
+  --surface-2: #202027;
+  --surface-3: #2b2b34;
+  --sunken: #111115;
+  --line: #22222a;
+  --line-strong: #2e2e38;
+  --divider: #1e1e25;
+  --ring: #3d3d49;
+  --shadow: 0 1px 0 rgb(255 255 255 / 0.03) inset;
+  --shadow-float: 0 12px 32px rgb(0 0 0 / 0.45);
 
-  --text: #f5efe2;
-  --text-2: #c9cfe3;
-  --muted: #9aa3c2;
-  --caption: #8791b3;
-  --placeholder: #6f7899;
+  --text: #f5f5f7;
+  --text-2: #cdcdd6;
+  --muted: #9e9eaa;
+  --caption: #8a8a96;
+  --placeholder: #666672;
 
-  --gold: #e9b44c;
-  --gold-text: #e9b44c;
-  --gold-line: #e9b44c;
-  --on-gold: #1b1405;
-  --gold-tint: #2a2410;
-  --gold-tint-2: #16140c;
-  --gold-tint-line: #5a4520;
-  --gold-tint-text: #e7d8b0;
+  --accent: #6a5af9;
+  --accent-text: #aea3ff;
+  --on-accent: #ffffff;
+  --accent-tint: #1f1b3d;
+  --accent-line: #8d80ff;
 
-  --green: #34c495;
-  --green-text: #34c495;
-  --on-green: #06140f;
-  --green-tint: #0f2e2a;
-  --green-tint-2: #0e1a24;
-  --green-tint-line: #173a36;
-  --green-tint-text: #bfe9da;
+  --gold: #f2b53a;
+  --gold-text: #f5c35c;
+  --gold-line: #f2b53a;
+  --on-gold: #1c1404;
+  --gold-tint: #2a2213;
+  --gold-tint-2: #1e1a12;
+  --gold-tint-line: #3b3018;
+  --gold-tint-text: #f3dcaa;
 
-  --coral: #f2907c;
-  --coral-text: #f2907c;
-  --on-coral: #1f0b06;
-  --coral-tint: #34201f;
-  --coral-tint-2: #1f1212;
-  --coral-tint-line: #4a2620;
-  --coral-tint-text: #f3c9bf;
+  --green: #22c77e;
+  --green-text: #3ddc93;
+  --on-green: #04140c;
+  --green-tint: #102a1e;
+  --green-tint-2: #0f1d17;
+  --green-tint-line: #183826;
+  --green-tint-text: #bdeed5;
 
-  --blue-text: #7d9bff;
-  --blue-tint: #13294a;
-  --blue-tint-text: #9db3ff;
+  --coral: #ff5d5d;
+  --coral-text: #ff7a7a;
+  --on-coral: #ffffff;
+  --coral-tint: #2e1517;
+  --coral-tint-2: #211214;
+  --coral-tint-line: #45201f;
+  --coral-tint-text: #ffcaca;
 
-  /* The balance card stays lapis in both themes. */
-  --lapis: #13204a;
-  --lapis-line: #3a4474;
-  --lapis-sunken: #0b1433;
-  --lapis-text: #f5efe2;
-  --lapis-text-2: #c9cfe3;
-  --lapis-muted: #9aa3c2;
+  --blue-text: #7fb0ff;
+  --blue-tint: #14223b;
+  --blue-tint-text: #b4d0ff;
+
+  --hero-base: #17132e;
+  --hero-a: #5b4bf5;
+  --hero-b: #0bb3a4;
+  --hero-c: #c04bd8;
+  --hero-text: #ffffff;
+  --hero-text-2: rgb(255 255 255 / 0.74);
+  --hero-chip: rgb(255 255 255 / 0.14);
+
+  /* legacy names still used by a few screens */
+  --lapis: var(--hero-base);
+  --lapis-line: var(--line-strong);
+  --lapis-sunken: rgb(255 255 255 / 0.1);
+  --lapis-text: var(--hero-text);
+  --lapis-text-2: var(--hero-text-2);
+  --lapis-muted: var(--hero-text-2);
 
   --tether: #26a17b;
-  --danger-dot: #e8705a;
+  --danger-dot: #ff5d5d;
 
   /* Chart series (validated for lightness, CVD separation and contrast on --surface) */
   --chart-1: #b8862a;
   --chart-2: #6a86ee;
+
+  --font: 'Manrope', 'Vazirmatn', Tahoma, system-ui, sans-serif;
+  --radius: 24px;
+  --radius-sm: 16px;
 }
 
 [data-theme='light'] {
   color-scheme: light;
-  --bg: #f6f2e9;
-  --bar: #ffffff;
+  --bg: #f3f3f6;
+  --bar: rgb(255 255 255 / 0.9);
   --surface: #ffffff;
-  --surface-2: #eef0f7;
-  --surface-3: #e3e8f6;
-  --sunken: #f4f1ea;
-  --line: #e4e1d8;
-  --line-strong: #d9d5ca;
-  --divider: #ece8de;
-  --ring: #c9cddc;
+  --surface-2: #efeff3;
+  --surface-3: #e4e4ea;
+  --sunken: #f6f6f8;
+  --line: #e7e7ec;
+  --line-strong: #dcdce3;
+  --divider: #eeeef2;
+  --ring: #c8c8d2;
+  --shadow: 0 1px 2px rgb(16 16 32 / 0.04), 0 6px 20px rgb(16 16 32 / 0.04);
+  --shadow-float: 0 12px 32px rgb(16 16 32 / 0.14);
 
-  --text: #111936;
-  --text-2: #3b4468;
-  --muted: #5b6486;
-  --caption: #646d8f;
-  --placeholder: #8a92ae;
+  --text: #0c0c12;
+  --text-2: #363642;
+  --muted: #62626e;
+  --caption: #6f6f7b;
+  --placeholder: #9a9aa6;
 
-  --gold-text: #9a6a0e;
-  --gold-line: #d29a2a;
-  --gold-tint: #fbf0d6;
-  --gold-tint-2: #fbf3e0;
-  --gold-tint-line: #ebd3a0;
-  --gold-tint-text: #6b4e12;
+  --accent: #5b4bf5;
+  --accent-text: #4a39e6;
+  --on-accent: #ffffff;
+  --accent-tint: #edebfe;
+  --accent-line: #5b4bf5;
 
-  --green-text: #13875f;
-  --green-tint: #e1f5ec;
-  --green-tint-2: #eaf7f1;
-  --green-tint-line: #bfe6d5;
-  --green-tint-text: #0e6b4b;
+  --gold: #e7a52a;
+  --gold-text: #9a620b;
+  --gold-line: #d69a2a;
+  --on-gold: #1c1404;
+  --gold-tint: #fcf1dc;
+  --gold-tint-2: #fdf5e6;
+  --gold-tint-line: #f1dcb0;
+  --gold-tint-text: #6c4a0e;
 
-  --coral-text: #c2493a;
-  --coral-tint: #fce7e2;
-  --coral-tint-2: #fdf0ec;
-  --coral-tint-line: #f1c6bb;
-  --coral-tint-text: #9a3324;
+  --green: #13b26c;
+  --green-text: #0b8a52;
+  --on-green: #ffffff;
+  --green-tint: #e2f6ec;
+  --green-tint-2: #ecf9f2;
+  --green-tint-line: #c3ead6;
+  --green-tint-text: #0a6a40;
 
-  --blue-text: #3552c9;
-  --blue-tint: #e4eafc;
-  --blue-tint-text: #2f47b0;
+  --coral: #e5484d;
+  --coral-text: #cc3338;
+  --on-coral: #ffffff;
+  --coral-tint: #fde8e8;
+  --coral-tint-2: #fef1f1;
+  --coral-tint-line: #f6caca;
+  --coral-tint-text: #9b2226;
+
+  --blue-text: #2f63d6;
+  --blue-tint: #e7eefc;
+  --blue-tint-text: #2551b3;
+
+  --hero-base: #2a1f7a;
 
   --chart-1: #a8760f;
   --chart-2: #3552c9;

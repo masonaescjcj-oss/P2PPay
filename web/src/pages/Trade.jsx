@@ -76,7 +76,7 @@ function Result({ trade }) {
         {ok && (
           <div dir="ltr" className="row" style={{ alignItems: 'baseline', gap: 8 }}>
             <span className={`num ${isBuyer ? 't-green' : ''}`} style={{ fontSize: 40, fontWeight: 800 }}>{isBuyer ? '+' : '−'}{usdt(isBuyer ? trade.receive : trade.amount)}</span>
-            <span className="t-gold strong">USDT</span>
+            <span className="muted strong">USDT</span>
           </div>
         )}
         <p className="muted" style={{ fontSize: 14 }}>{ok ? (isBuyer ? t('addedToWallet') : t('soldDone')) : t('tradeCancelledSub')}</p>
@@ -165,7 +165,7 @@ export default function Trade() {
         <div className="between">
           <div className="stack" style={{ gap: 2 }}>
             <span className="caption">{isBuyer ? t('amountToPay') : t('amountToReceive')}</span>
-            <span style={{ fontSize: 26, fontWeight: 800 }}><span className="num">{afn(tr.fiat)}</span> <span className="t-gold">؋</span></span>
+            <span style={{ fontSize: 26, fontWeight: 800 }}><span className="num">{afn(tr.fiat)}</span> <span className="muted">؋</span></span>
           </div>
           <button type="button" className="icon-btn" style={{ background: 'var(--surface-3)', border: 0 }} aria-label={t('copy')} onClick={() => copy(tr.fiat)}>
             <Icon name="copy" size={18} />

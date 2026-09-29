@@ -28,7 +28,7 @@ function AddressCard({ address, label, onCopied }) {
         <span className="caption">{label}</span>
         <div className="row" style={{ padding: '10px 12px', borderRadius: 14, background: 'var(--sunken)', border: '1px dashed var(--ring)' }}>
           <span className="address grow">{address || '—'}</span>
-          <button type="button" className="icon-btn" style={{ width: 40, height: 40, background: 'var(--gold)', color: 'var(--on-gold)', border: 0 }} aria-label={t('copy')} onClick={async () => onCopied((await copyText(address)) ? t('copied') : address)}>
+          <button type="button" className="icon-btn" style={{ width: 40, height: 40, background: 'var(--accent)', color: 'var(--on-accent)', border: 0 }} aria-label={t('copy')} onClick={async () => onCopied((await copyText(address)) ? t('copied') : address)}>
             <Icon name="copy" size={17} stroke={2} />
           </button>
         </div>

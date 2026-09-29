@@ -133,8 +133,8 @@ export default function Offer() {
         <span className="label">{t('paymentMethod')}</span>
         <div className="grid-2" style={{ gap: 8 }}>
           {o.paymentMethods.map((m) => (
-            <label key={m} className="input-box sm" style={{ cursor: 'pointer', borderColor: chosen === m ? 'var(--gold-line)' : undefined, background: chosen === m ? 'var(--gold-tint)' : undefined }}>
-              <input type="radio" name="pm" checked={chosen === m} onChange={() => setMethod(m)} style={{ flexGrow: 0, accentColor: 'var(--gold)', width: 18, height: 18 }} />
+            <label key={m} className="input-box sm" style={{ cursor: 'pointer', boxShadow: chosen === m ? 'inset 0 0 0 1.5px var(--accent-line)' : undefined, background: chosen === m ? 'var(--accent-tint)' : undefined }}>
+              <input type="radio" name="pm" checked={chosen === m} onChange={() => setMethod(m)} style={{ flexGrow: 0, accentColor: 'var(--accent)', width: 18, height: 18 }} />
               <span style={{ fontSize: 14, fontWeight: 700 }}>{pm(m)}</span>
             </label>
           ))}

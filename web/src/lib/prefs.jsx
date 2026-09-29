@@ -32,7 +32,7 @@ export function PrefsProvider({ children }) {
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme
-    document.querySelector('meta[name="theme-color"]')?.setAttribute('content', theme === 'dark' ? '#080C1C' : '#F6F2E9')
+    document.querySelector('meta[name="theme-color"]')?.setAttribute('content', theme === 'dark' ? '#0A0A0D' : '#F3F3F6')
   }, [theme])
 
   const setLang = useCallback((v) => {

@@ -24,7 +24,7 @@ export default function TradeCard({ trade }) {
     <Link to={`/trades/${trade.id}`} className="card stack" style={{ gap: 10, color: 'var(--text)', borderColor: trade.status === 'disputed' ? 'var(--coral-tint-line)' : undefined }}>
       <div className="between">
         <div className="row" style={{ gap: 8 }}>
-          <span className={`pill ${isBuy ? 'green' : 'coral'}`} style={{ borderRadius: 8 }}>{isBuy ? t('buy') : t('sell')}</span>
+          <span className={`pill ${isBuy ? 'green' : 'coral'}`}>{isBuy ? t('buy') : t('sell')}</span>
           <span className="caption">
             <span className="num">#{trade.id}</span> · {other.displayName}
           </span>

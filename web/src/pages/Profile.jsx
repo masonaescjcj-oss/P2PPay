@@ -37,21 +37,13 @@ export default function Profile() {
   return (
     <>
       <main className="page with-tabs">
-        <div className="row" style={{ gap: 14 }}>
-          <div style={{ position: 'relative', width: 72, height: 72, flexShrink: 0 }}>
-            <svg width="72" height="72" viewBox="0 0 72 72" aria-hidden="true" style={{ position: 'absolute', inset: 0 }}>
-              <g fill="none" stroke="var(--gold-text)" strokeWidth="1.4">
-                <rect x="12" y="12" width="48" height="48" />
-                <rect x="12" y="12" width="48" height="48" transform="rotate(45 36 36)" />
-              </g>
-            </svg>
-            <div className="avatar" style={{ position: 'absolute', top: 14, insetInlineStart: 14, width: 44, height: 44, color: 'var(--gold-text)', fontSize: 19 }}>{initial(user.displayName)}</div>
-          </div>
-          <div className="grow stack" style={{ gap: 4 }}>
-            <strong style={{ fontSize: 18 }}>{user.displayName}</strong>
-            <span dir="ltr" className="caption" style={{ textAlign: 'start' }}>@{user.username}</span>
+        <div className="stack" style={{ alignItems: 'center', gap: 6, paddingTop: 8 }}>
+          <div className="avatar gold" style={{ width: 84, height: 84, fontSize: 32 }}>{initial(user.displayName)}</div>
+          <div className="stack" style={{ alignItems: 'center', gap: 2, marginTop: 6 }}>
+            <strong style={{ fontSize: 22, fontWeight: 800 }}>{user.displayName}</strong>
+            <span dir="ltr" className="caption">@{user.username}</span>
             {(user.kycTier ?? 0) >= 2 && (
-              <span className="pill green" style={{ alignSelf: 'flex-start', height: 24 }}><Icon name="check" size={12} stroke={2.4} />{t('verified')}</span>
+              <span className="pill green" style={{ height: 24, marginTop: 4 }}><Icon name="check" size={12} stroke={2.4} />{t('verified')}</span>
             )}
           </div>
         </div>
@@ -104,7 +96,7 @@ export default function Profile() {
 
         {iosHelp && (
           <Sheet title={t('installApp')} onClose={() => setIosHelp(false)}>
-            <ol className="steps">
+            <ol className="howto">
               <li>{t('iosStep1')}</li>
               <li>{t('iosStep2')}</li>
               <li>{t('iosStep3')}</li>

@@ -71,7 +71,7 @@ export default function Orders() {
       <main className="page with-tabs" style={{ gap: 14 }}>
         <div className="between">
           <h1 className="h1">{t('orders')}</h1>
-          <Link to="/offers/new" className="btn btn-secondary btn-sm" style={{ color: 'var(--gold-text)', height: 40 }}>
+          <Link to="/offers/new" className="btn btn-secondary btn-sm" style={{ color: 'var(--accent-text)', height: 40 }}>
             <Icon name="plus" size={16} stroke={2.2} />
             {t('newOffer')}
           </Link>
@@ -80,7 +80,7 @@ export default function Orders() {
         <div className="seg" style={{ height: 46 }}>
           <button type="button" aria-pressed={tab === 'active'} onClick={() => setParams({}, { replace: true })}>
             {t('active')}
-            {active.length > 0 && <span className="pill gold num" style={{ height: 20, padding: '0 7px', background: 'var(--gold)', color: 'var(--on-gold)' }}>{active.length}</span>}
+            {active.length > 0 && <span className="pill num" style={{ height: 20, padding: '0 7px', background: 'var(--accent)', color: 'var(--on-accent)' }}>{active.length}</span>}
           </button>
           <button type="button" aria-pressed={tab === 'done'} onClick={() => setParams({ tab: 'done' }, { replace: true })}>{t('completed')}</button>
           <button type="button" aria-pressed={tab === 'offers'} onClick={() => setParams({ tab: 'offers' }, { replace: true })}>{t('myOffers')}</button>

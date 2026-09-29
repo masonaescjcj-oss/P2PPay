@@ -130,7 +130,7 @@ export default function Chat() {
           <div className="input-box grow" style={{ minHeight: 48, borderRadius: 14 }}>
             <input id="msg" placeholder={t('writeMessage')} value={text} onChange={(e) => setText(e.target.value)} maxLength={2000} autoComplete="off" />
           </div>
-          <button type="submit" className="icon-btn" style={{ width: 48, height: 48, background: 'var(--gold)', color: 'var(--on-gold)', border: 0 }} aria-label={t('send')} disabled={sending || !text.trim()}>
+          <button type="submit" className="icon-btn" style={{ width: 48, height: 48, background: 'var(--accent)', color: 'var(--on-accent)', border: 0 }} aria-label={t('send')} disabled={sending || !text.trim()}>
             <Icon name="send" stroke={2} />
           </button>
         </div>

@@ -5,8 +5,8 @@ import { usePrefs } from '../lib/prefs.jsx'
 export function VerifiedBadge() {
   return (
     <svg width="15" height="15" viewBox="0 0 24 24" aria-hidden="true">
-      <path d="M12 2l2.4 2.1 3.2-.3.9 3.1 2.8 1.6-1 3 1 3-2.8 1.6-.9 3.1-3.2-.3L12 22l-2.4-2.1-3.2.3-.9-3.1-2.8-1.6 1-3-1-3 2.8-1.6.9-3.1 3.2.3z" fill="var(--gold)" />
-      <path d="m8.5 12 2.4 2.4 4.6-4.8" fill="none" stroke="#1B1405" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M12 2l2.4 2.1 3.2-.3.9 3.1 2.8 1.6-1 3 1 3-2.8 1.6-.9 3.1-3.2-.3L12 22l-2.4-2.1-3.2.3-.9-3.1-2.8-1.6 1-3-1-3 2.8-1.6.9-3.1 3.2.3z" fill="var(--accent)" />
+      <path d="m8.5 12 2.4 2.4 4.6-4.8" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   )
 }
@@ -39,7 +39,7 @@ export default function OfferCard({ offer, side }) {
   return (
     <article className="offer-card">
       <div className="row">
-        <div className="avatar" style={{ width: 38, height: 38, fontSize: 15 }}>
+        <div className="avatar" style={{ width: 42, height: 42, fontSize: 16 }}>
           {initial(offer.maker.displayName)}
         </div>
         <MakerLine maker={offer.maker} />

@@ -13,7 +13,7 @@ function Meter({ used, limit }) {
   const pct = toNum(limit) > 0 ? Math.min(100, (toNum(used) / toNum(limit)) * 100) : 0
   return (
     <div className="meter" style={{ background: 'var(--surface-2)' }} role="img" aria-label={`${pct.toFixed(0)}%`}>
-      <span style={{ width: `${pct}%`, background: pct > 85 ? 'var(--coral)' : 'var(--gold)' }} />
+      <span style={{ width: `${pct}%`, background: pct > 85 ? 'var(--coral)' : 'var(--accent)' }} />
     </div>
   )
 }

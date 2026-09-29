@@ -70,7 +70,7 @@ export default function AdminOverview() {
       <div className="grid-2">
         <div className="balance-card" style={{ gap: 6 }}>
           <span className="sub">{t('userBalances')}</span>
-          <span dir="ltr" className="num" style={{ fontSize: 30, fontWeight: 800, textAlign: 'end' }}>{usdt(o.userBalances)} <span style={{ fontSize: 14, color: '#E9B44C' }}>USDT</span></span>
+          <span dir="ltr" className="num" style={{ fontSize: 30, fontWeight: 800, textAlign: 'end' }}>{usdt(o.userBalances)} <span style={{ fontSize: 14, color: 'var(--muted)' }}>USDT</span></span>
         </div>
         <div className="card stack" style={{ gap: 6, justifyContent: 'center' }}>
           <span className="caption">{t('feesEarned')}</span>
