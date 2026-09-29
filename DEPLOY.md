@@ -1,4 +1,4 @@
-# استقرار P2PPay — Supabase + Fly.io
+# استقرار AriaPay — Supabase + Fly.io
 
 **خلاصه:** پایگاه‌داده (PostgreSQL) و فایل‌های احراز هویت (Storage) روی **Supabase** هستند. خود برنامه (API + وب اپ) یک
 کانتینر Docker است که روی **Fly.io** در **بمبئی (bom)**، کنار پروژهٔ Supabase در همان منطقه، اجرا می‌شود.
@@ -37,7 +37,7 @@
 ```bash
 curl -L https://fly.io/install.sh | sh
 fly auth login
-fly launch --no-deploy --copy-config --name p2ppay --region bom   # از fly.toml همین مخزن استفاده می‌کند
+fly launch --no-deploy --copy-config --name ariapay --region bom   # از fly.toml همین مخزن استفاده می‌کند
 ```
 
 ### رازها (secrets) — فقط اینجا، هرگز در فایل یا git
@@ -76,7 +76,7 @@ fly deploy
 
 ```bash
 fly certs add app.example.af
-# رکورد DNS: CNAME app → p2ppay.fly.dev  (یا A/AAAA طبق خروجی دستور)
+# رکورد DNS: CNAME app → ariapay.fly.dev  (یا A/AAAA طبق خروجی دستور)
 ```
 
 `COOKIE_SECURE=1` و HSTS از قبل در `fly.toml` روشن هستند.
@@ -86,9 +86,9 @@ fly certs add app.example.af
 همین مراحل با پروژهٔ Supabase جدا و اپ جدا:
 
 ```bash
-fly launch --no-deploy --copy-config --name p2ppay-staging --region bom
-fly secrets set -a p2ppay-staging DATABASE_URL=… # پروژهٔ Supabase مخصوص staging
-fly deploy -a p2ppay-staging
+fly launch --no-deploy --copy-config --name ariapay-staging --region bom
+fly secrets set -a ariapay-staging DATABASE_URL=… # پروژهٔ Supabase مخصوص staging
+fly deploy -a ariapay-staging
 ```
 
 هرگز staging و production یک پایگاه‌داده، یک mnemonic یا یک کلید رمزگذاری نداشته باشند.
@@ -107,8 +107,8 @@ fly deploy -a p2ppay-staging
 ## 5. اجرای محلی image
 
 ```bash
-docker build -t p2ppay .
-docker run --rm -p 8080:8080 -e NODE_ENV=staging -e DATABASE_URL=postgres://… -e DATA_ENCRYPTION_KEY=… p2ppay
+docker build -t ariapay .
+docker run --rm -p 8080:8080 -e NODE_ENV=staging -e DATABASE_URL=postgres://… -e DATA_ENCRYPTION_KEY=… ariapay
 ```
 
 در `NODE_ENV=production` سرور بدون `DATABASE_URL` یا با `SMS_PROVIDER=console` شروع نمی‌شود.
@@ -129,3 +129,20 @@ docker run --rm -p 8080:8080 -e NODE_ENV=staging -e DATABASE_URL=postgres://… 
    `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `DATA_ENCRYPTION_KEY`, admin, Twilio, TronGrid, mnemonic, cold wallet).
 4. `fly deploy` — migrations run as the release command; `/api/health` gates the rollout.
 5. `fly certs add <domain>`; keep `TRON_NETWORK=nile` until the beta is signed off.
+
+---
+
+## نسخهٔ آزمایشی روی Vercel (دادهٔ نمونه)
+
+نسخهٔ آزمایشی کامل در مرورگر اجرا می‌شود (همان کد سرور روی PGlite، با معامله‌گران نمونه) و به سرور، پایگاه‌داده یا کیف پول واقعی وصل نیست.
+برای همین روی هر میزبان فایل ایستا، از جمله Vercel، بالا می‌آید.
+
+- **از طریق GitHub:** در Vercel پروژه را از همین مخزن Import کنید و **Root Directory** را `web` بگذارید. ساخت و خروجی از `web/vercel.json` خوانده می‌شود.
+- **از خط فرمان:**
+  ```bash
+  cd web && npm ci && npm --prefix ../server ci --omit=dev && npm run build:demo
+  cd dist-demo && rm -f artifact.html files.json
+  node -e "const v=require('../vercel.json'); require('fs').writeFileSync('vercel.json', JSON.stringify({headers: v.headers}))"
+  npx vercel deploy --prod   # فایل‌های آماده منتشر می‌شوند؛ ساختی روی Vercel لازم نیست
+  ```
+- صفحه با `X-Robots-Tag: noindex` منتشر می‌شود. دادهٔ هر بازدیدکننده فقط در مرورگر خودش می‌ماند.

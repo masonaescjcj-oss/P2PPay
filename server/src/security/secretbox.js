@@ -7,6 +7,7 @@ const path = require('node:path');
 
 function createSecretBox(key) {
   if (!Buffer.isBuffer(key) || key.length !== 32) throw new Error('data key must be 32 bytes');
+  // Fixed key-derivation labels (from the project's first name): changing them makes stored data unreadable.
   const encKey = crypto.createHmac('sha256', key).update('p2ppay:enc').digest();
   const macKey = crypto.createHmac('sha256', key).update('p2ppay:mac').digest();
   return {

@@ -1,6 +1,6 @@
 # Fly.io — API + web app in Mumbai (bom), next to a Supabase project in ap-south-1 (Mumbai).
 # Secrets (never in this file): fly secrets set DATABASE_URL=… DATA_ENCRYPTION_KEY=… (see DEPLOY.md)
-app = "p2ppay"
+app = "ariapay"
 primary_region = "bom"
 
 [build]

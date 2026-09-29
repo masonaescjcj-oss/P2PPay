@@ -1,4 +1,4 @@
-// The P2PPay server, running in this browser tab: the real server modules (server/src) on PGlite
+// The AriaPay server, running in this browser tab: the real server modules (server/src) on PGlite
 // (Postgres compiled to WebAssembly, stored in IndexedDB). Requests from the web app reach it
 // through a fetch bridge instead of the network. For testing only: no real money, no real SMS.
 import appModule from '../../server/src/app.js'
@@ -10,9 +10,9 @@ const { createApp } = appModule
 const { hashPassword } = authModule
 
 export const ADMIN = { username: 'admin', password: 'admin-test-1405' }
-const KEY_STORE = 'p2ppay.demo.key'
-const COOKIE_STORE = 'p2ppay.demo.cookie'
-const DB_NAME = 'p2ppay-demo'
+const KEY_STORE = 'ariapay.demo.key'
+const COOKIE_STORE = 'ariapay.demo.cookie'
+const DB_NAME = 'ariapay-demo'
 
 const safe = {
   get: (k) => {
@@ -56,7 +56,7 @@ function blobStore() {
   const open = () =>
     (dbp ??= new Promise((resolve) => {
       try {
-        const r = indexedDB.open('p2ppay-demo-files', 1)
+        const r = indexedDB.open('ariapay-demo-files', 1)
         r.onupgradeneeded = () => r.result.createObjectStore('files')
         r.onsuccess = () => resolve(r.result)
         r.onerror = () => resolve(null)
@@ -203,7 +203,7 @@ function dataKey() {
 
 async function canUseIndexedDb() {
   try {
-    const r = indexedDB.open('p2ppay-demo-probe')
+    const r = indexedDB.open('ariapay-demo-probe')
     return await new Promise((res) => {
       r.onsuccess = () => {
         r.result.close()
@@ -304,7 +304,7 @@ export async function topUp(amount = '500') {
 export async function resetAll() {
   safe.set(COOKIE_STORE, null)
   safe.set(KEY_STORE, null)
-  for (const name of [`/pglite/${DB_NAME}`, DB_NAME, 'p2ppay-demo-files']) {
+  for (const name of [`/pglite/${DB_NAME}`, DB_NAME, 'ariapay-demo-files']) {
     await new Promise((res) => {
       try {
         const r = indexedDB.deleteDatabase(name)

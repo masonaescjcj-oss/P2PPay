@@ -29,7 +29,7 @@ async function freshDatabase() {
   const admin = process.env.TEST_DATABASE_URL;
   if (!admin) return { url: '', drop: async () => {} };
   const { Client } = require('pg');
-  const name = `p2ppay_test_${process.pid}_${++dbSeq}_${Date.now().toString(36)}`;
+  const name = `ariapay_test_${process.pid}_${++dbSeq}_${Date.now().toString(36)}`;
   const c = new Client({ connectionString: admin });
   await c.connect();
   await c.query(`CREATE DATABASE ${name}`);
@@ -48,7 +48,7 @@ async function freshDatabase() {
 }
 
 async function setup(overrides = {}, deps = {}) {
-  const kycDir = fs.mkdtempSync(path.join(os.tmpdir(), 'p2ppay-kyc-'));
+  const kycDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ariapay-kyc-'));
   const database = await freshDatabase();
   const config = {
     ...baseConfig, databaseUrl: database.url, pgliteDir: ':memory:', dataKey: '', storage: { provider: 'local' },
@@ -81,7 +81,7 @@ async function setup(overrides = {}, deps = {}) {
     return {
       get: (p) => call('GET', p),
       post: (p, b = {}) => call('POST', p, b),
-      upload: (p, buf, type = 'image/png') => call('POST', p, buf, { 'content-type': type, 'x-p2ppay-upload': '1' }),
+      upload: (p, buf, type = 'image/png') => call('POST', p, buf, { 'content-type': type, 'x-ariapay-upload': '1' }),
     };
   }
 

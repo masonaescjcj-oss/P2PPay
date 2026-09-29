@@ -22,11 +22,11 @@ export function StarMark({ size = 34, color = 'var(--accent-text)' }) {
 }
 
 export function Wordmark() {
-  // "P2PPay" highlights the 2; other names ending in "Pay" (e.g. AriaPay) highlight "Pay".
-  const [head, accent, tail] = BRAND === 'P2PPay' ? ['P', '2', 'PPay'] : BRAND.endsWith('Pay') ? [BRAND.slice(0, -3), 'Pay', ''] : [BRAND, '', '']
+  // Names ending in "Pay" (AriaPay) show "Pay" in the accent colour.
+  const [head, accent] = BRAND.endsWith('Pay') ? [BRAND.slice(0, -3), 'Pay'] : [BRAND, '']
   return (
     <div dir="ltr" style={{ fontSize: 22, fontWeight: 800, letterSpacing: 0.2 }}>
-      {head}<span style={{ color: 'var(--accent-text)' }}>{accent}</span>{tail}
+      {head}<span style={{ color: 'var(--accent-text)' }}>{accent}</span>
     </div>
   )
 }

@@ -21,8 +21,8 @@ function save(key, value) {
 }
 
 export function PrefsProvider({ children }) {
-  const [lang, setLangState] = useState(() => load('p2ppay.lang', 'fa', ['fa', 'en']))
-  const [theme, setThemeState] = useState(() => load('p2ppay.theme', 'dark', ['dark', 'light']))
+  const [lang, setLangState] = useState(() => load('ariapay.lang', 'fa', ['fa', 'en']))
+  const [theme, setThemeState] = useState(() => load('ariapay.theme', 'dark', ['dark', 'light']))
 
   useEffect(() => {
     const el = document.documentElement
@@ -37,11 +37,11 @@ export function PrefsProvider({ children }) {
 
   const setLang = useCallback((v) => {
     setLangState(v)
-    save('p2ppay.lang', v)
+    save('ariapay.lang', v)
   }, [])
   const setTheme = useCallback((v) => {
     setThemeState(v)
-    save('p2ppay.theme', v)
+    save('ariapay.theme', v)
   }, [])
 
   const t = useCallback(

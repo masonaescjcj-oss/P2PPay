@@ -1,4 +1,4 @@
-# P2PPay server
+# AriaPay server
 
 Express 5 + Node.js 22 + **PostgreSQL** (Supabase in production).
 
@@ -49,7 +49,7 @@ The trade fee (`TRADE_FEE_BPS`, default 0.1%) is deducted from the USDT the buye
 
 ## Auth
 
-Session cookie (`HttpOnly`, `SameSite=Strict`). Every non-GET request must be `Content-Type: application/json` (CSRF guard); the only exception is KYC image upload, which must carry `x-p2ppay-upload: 1` (a header a cross-site form cannot set).
+Session cookie (`HttpOnly`, `SameSite=Strict`). Every non-GET request must be `Content-Type: application/json` (CSRF guard); the only exception is KYC image upload, which must carry `x-ariapay-upload: 1` (a header a cross-site form cannot set).
 Errors are `{"error": "<code>"}` with an HTTP status; the web app maps codes to Dari/English messages.
 
 ## Security & compliance

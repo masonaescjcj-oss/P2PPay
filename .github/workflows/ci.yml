@@ -65,4 +65,4 @@ jobs:
     needs: [server, web]
     steps:
       - uses: actions/checkout@v4
-      - run: docker build -t p2ppay:ci .
+      - run: docker build -t ariapay:ci .

@@ -94,7 +94,7 @@ async function createApp(config, deps = {}) {
   // upload carrying a custom header (which a cross-site form cannot set) — on top of SameSite=Strict cookies.
   api.use((req, _res, next) => {
     if (req.method === 'GET' || req.is('application/json')) return next();
-    if (/^\/kyc\/submission\/\d+\/files\//.test(req.path) && req.get('x-p2ppay-upload') === '1' && req.is('image/*')) return next();
+    if (/^\/kyc\/submission\/\d+\/files\//.test(req.path) && req.get('x-ariapay-upload') === '1' && req.is('image/*')) return next();
     next(bad('json_required'));
   });
   api.use(auth.session);

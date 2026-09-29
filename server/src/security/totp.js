@@ -64,7 +64,7 @@ function verifyTotp(secret, code, { now = Date.now(), window = 1, lastStep = 0 }
   return null;
 }
 
-function otpauthUri(secret, account, issuer = 'P2PPay') {
+function otpauthUri(secret, account, issuer = 'AriaPay') {
   const label = encodeURIComponent(`${issuer}:${account}`);
   return `otpauth://totp/${label}?secret=${secret}&issuer=${encodeURIComponent(issuer)}&algorithm=SHA1&digits=6&period=30`;
 }

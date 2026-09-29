@@ -55,7 +55,7 @@ module.exports = {
   paymentMethods: ['hesabpay', 'mpaisa', 'mhawala', 'bank', 'hawala', 'cash'],
 
   // Product name in SMS texts and the authenticator app entry.
-  appName: process.env.APP_NAME || 'P2PPay',
+  appName: process.env.APP_NAME || 'AriaPay',
   nodeEnv: process.env.NODE_ENV || 'development',
   // 64 hex chars (32 bytes). Encrypts TOTP secrets and KYC documents. Required in production.
   dataKey: process.env.DATA_ENCRYPTION_KEY || '',
@@ -104,7 +104,7 @@ module.exports = {
   push: {
     publicKey: process.env.VAPID_PUBLIC_KEY || '',
     privateKey: process.env.VAPID_PRIVATE_KEY || '',
-    subject: process.env.VAPID_SUBJECT || 'mailto:support@p2ppay.example',
+    subject: process.env.VAPID_SUBJECT || 'mailto:support@ariapay.example',
   },
 
   // Terms of use + privacy notice version users must accept (bump it when the texts change).

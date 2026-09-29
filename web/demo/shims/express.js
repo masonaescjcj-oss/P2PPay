@@ -1,4 +1,4 @@
-// A small Express-compatible router, enough for the P2PPay server to run unchanged in the browser:
+// A small Express-compatible router, enough for the AriaPay server to run unchanged in the browser:
 // app/router .use/.get/.post, :params, mounted routers, async handlers, error middleware.
 function compile(path) {
   if (path instanceof RegExp) return { re: path, keys: [] }

@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1
-# P2PPay: one image serving the API and the built web app. Data lives in Supabase (Postgres + Storage).
+# AriaPay: one image serving the API and the built web app. Data lives in Supabase (Postgres + Storage).
 
 # ---- web app ----
 FROM node:22-bookworm-slim AS web

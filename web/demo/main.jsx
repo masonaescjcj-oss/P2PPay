@@ -30,10 +30,10 @@ const setBoot = (text) => {
 
 // First visit: follow the viewer's light/dark theme (the app remembers the choice afterwards).
 try {
-  if (!localStorage.getItem('p2ppay.theme')) {
+  if (!localStorage.getItem('ariapay.theme')) {
     const host = document.documentElement.dataset.theme
     const light = host ? host === 'light' : matchMedia('(prefers-color-scheme: light)').matches
-    localStorage.setItem('p2ppay.theme', light ? 'light' : 'dark')
+    localStorage.setItem('ariapay.theme', light ? 'light' : 'dark')
   }
 } catch {
   // storage blocked

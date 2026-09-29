@@ -40,7 +40,7 @@ export const api = {
       res = await fetch(`/api${path}`, {
         method: 'POST',
         credentials: 'same-origin',
-        headers: { 'content-type': blob.type || 'image/jpeg', 'x-p2ppay-upload': '1' },
+        headers: { 'content-type': blob.type || 'image/jpeg', 'x-ariapay-upload': '1' },
         body: blob,
       })
     } catch {

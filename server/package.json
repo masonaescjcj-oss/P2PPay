@@ -1,5 +1,5 @@
 {
-  "name": "p2ppay",
+  "name": "ariapay",
   "version": "0.1.0",
   "description": "P2P USDT marketplace for Afghanistan (AFN) with escrow",
   "main": "src/index.js",

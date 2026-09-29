@@ -1,10 +1,10 @@
-// P2PPay service worker: makes the app installable and opens the app shell when the network is slow
+// AriaPay service worker: makes the app installable and opens the app shell when the network is slow
 // or gone. It never touches /api — balances, trades and codes always come from the server.
-const CACHE = 'p2ppay-shell-v1'
+const CACHE = 'ariapay-shell-v1'
 const SHELL = ['/', '/manifest.webmanifest', '/icons/icon-192.png']
 
 const OFFLINE = `<!doctype html><html lang="fa" dir="rtl"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>P2PPay</title><body style="margin:0;min-height:100vh;display:grid;place-items:center;background:#080C1C;color:#F5EFE2;font:16px/1.9 Vazirmatn,Tahoma,sans-serif;text-align:center;padding:24px">
+<title>AriaPay</title><body style="margin:0;min-height:100vh;display:grid;place-items:center;background:#080C1C;color:#F5EFE2;font:16px/1.9 Vazirmatn,Tahoma,sans-serif;text-align:center;padding:24px">
 <div><p style="font-size:20px;font-weight:700">اتصال اینترنت برقرار نیست</p><p>وقتی دوباره آنلاین شدید، صفحه را تازه کنید. معاملات شما روی سرور محفوظ است.</p>
 <p style="color:#9AA3C2" dir="ltr">You are offline. Reload when you are back online.</p></div></body></html>`
 
@@ -62,10 +62,10 @@ self.addEventListener('push', (event) => {
   try {
     n = event.data ? event.data.json() : {}
   } catch {
-    n = { title: 'P2PPay', body: event.data?.text() || '' }
+    n = { title: 'AriaPay', body: event.data?.text() || '' }
   }
   event.waitUntil(
-    self.registration.showNotification(n.title || 'P2PPay', {
+    self.registration.showNotification(n.title || 'AriaPay', {
       body: n.body || '',
       icon: '/icons/icon-192.png',
       badge: '/icons/icon-192.png',

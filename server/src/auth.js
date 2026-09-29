@@ -28,7 +28,7 @@ function parseCookies(header = '') {
 }
 
 function createAuth(db, config) {
-  const COOKIE = 'p2ppay_session';
+  const COOKIE = 'ariapay_session';
   const ttl = config.sessionDays * 86400_000;
 
   const findSession = (token) =>
