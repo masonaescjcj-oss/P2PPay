@@ -57,6 +57,8 @@ jobs:
       - name: Every string in Dari and English, every server error has a message
         run: npm run check:strings
       - run: npm run build
+      - name: Browser test build (web + the real server code in the page)
+        run: npm --prefix ../server ci --omit=dev && npm run build:demo
 
   docker:
     runs-on: ubuntu-latest

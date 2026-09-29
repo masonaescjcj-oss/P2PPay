@@ -1344,3 +1344,13 @@ textarea::placeholder {
   max-height: 240px;
   overflow: auto;
 }
+
+.plain-btn {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: zoom-in;
+  text-align: inherit;
+}

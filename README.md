@@ -22,4 +22,11 @@ npm run dev:server    # API on :3000
 npm run dev:web       # web app on :5173 (proxies /api to :3000)
 ```
 
+### نسخهٔ آزمایشی در مرورگر (Browser test build)
+
+`npm --prefix web run build:demo` → `web/dist-demo/`: the web app **plus the real server code** running in the page
+(PGlite in IndexedDB, Node APIs replaced by small browser shims in `web/demo/shims`). Test USDT top-up, SMS codes on
+screen, an admin account and three sample traders who pay/release by themselves. No real money; data stays in that
+browser. Serve the folder with any static server, or publish `artifact.html` + `assets/`.
+
 Requires Node.js ≥ 22.13. No database server is needed for development (embedded Postgres); production runs on Supabase.

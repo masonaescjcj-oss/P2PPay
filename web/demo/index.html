@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <title>P2PPay آزمایشی</title>
+    <style>
+      /* Loading screen until the in-browser server is ready (dark-first, like the app). */
+      :root { --boot-bg: #080c1c; --boot-fg: #c9cfe3; --boot-accent: #e9b44c; --boot-bad: #f2907c; color-scheme: dark; }
+      @media (prefers-color-scheme: light) { :root:not([data-theme="dark"]) { --boot-bg: #f6f2e9; --boot-fg: #3b4468; --boot-accent: #9a6a0e; --boot-bad: #b4452f; color-scheme: light; } }
+      :root[data-theme="light"] { --boot-bg: #f6f2e9; --boot-fg: #3b4468; --boot-accent: #9a6a0e; --boot-bad: #b4452f; color-scheme: light; }
+      body { background: var(--boot-bg); }
+      #boot { min-height: 70vh; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px; padding-inline: 16px; text-align: center; color: var(--boot-fg); font: 15px/1.9 Vazirmatn, Tahoma, system-ui, sans-serif; }
+      #boot .mark { width: 44px; height: 44px; border: 2px solid var(--boot-accent); transform: rotate(45deg); }
+      #boot.failed { color: var(--boot-bad); }
+      @media (prefers-reduced-motion: no-preference) { #boot:not(.failed) .mark { animation: boot-spin 2.4s linear infinite; } }
+      @keyframes boot-spin { to { transform: rotate(405deg); } }
+    </style>
+  </head>
+  <body>
+    <div id="boot"><div class="mark"></div><div id="boot-text">در حال بارگذاری… · Loading…</div></div>
+    <div id="root"></div>
+    <script type="module" src="./main.jsx"></script>
+  </body>
+</html>

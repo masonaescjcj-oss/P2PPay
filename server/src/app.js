@@ -262,6 +262,8 @@ async function createApp(config, deps = {}) {
   };
   app.locals.db = db;
   app.locals.chain = chain;
+  // For tools that run in-process (the browser test build seeds sample traders with these).
+  app.locals.services = { wallet, market, funds, security, beta };
   return app;
 }
 

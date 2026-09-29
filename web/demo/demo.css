@@ -1,0 +1,64 @@
+/* Test-version controls, drawn with the app's own tokens. */
+.demo-fab {
+  position: fixed;
+  z-index: 40;
+  inset-inline-start: 12px;
+  bottom: calc(92px + env(safe-area-inset-bottom, 0px));
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 34px;
+  padding: 0 14px;
+  border-radius: 17px;
+  border: 1px solid var(--gold-tint-line);
+  background: var(--gold-tint);
+  color: var(--gold-tint-text);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 6px 18px rgb(0 0 0 / 0.25);
+}
+.demo-fab:focus-visible,
+.demo-sms:focus-visible {
+  outline: 2px solid var(--gold-line);
+  outline-offset: 2px;
+}
+.demo-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--gold);
+}
+.demo-sms {
+  position: fixed;
+  z-index: 60;
+  top: calc(12px + env(safe-area-inset-top, 0px));
+  left: 50%;
+  transform: translateX(-50%);
+  max-width: calc(100% - 32px);
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px;
+  border-radius: 14px;
+  border: 1px solid var(--green-tint-line);
+  background: var(--green-tint);
+  color: var(--green-tint-text);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 10px 30px rgb(0 0 0 / 0.3);
+}
+@media (prefers-reduced-motion: no-preference) {
+  .demo-sms {
+    animation: demo-drop 0.25s ease-out;
+  }
+}
+@keyframes demo-drop {
+  from {
+    transform: translate(-50%, -12px);
+    opacity: 0;
+  }
+}

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Empty, Loading } from '../../components/Layout.jsx'
 import Sheet from '../../components/Sheet.jsx'
 import { api } from '../../lib/api.js'
@@ -7,11 +7,32 @@ import { usePrefs } from '../../lib/prefs.jsx'
 
 const TONE = { pending: 'gold', approved: 'green', rejected: 'coral', draft: 'neutral' }
 
+// Documents are fetched with the staff session and shown from a blob: URL (never a public link).
+function DocImage({ path, alt, style }) {
+  const [src, setSrc] = useState(null)
+  useEffect(() => {
+    let url = null
+    let alive = true
+    fetch(`/api${path}`, { credentials: 'same-origin' })
+      .then((r) => (r.ok ? r.blob() : null))
+      .then((b) => {
+        if (b && alive) setSrc((url = URL.createObjectURL(b)))
+      })
+      .catch(() => {})
+    return () => {
+      alive = false
+      if (url) URL.revokeObjectURL(url)
+    }
+  }, [path])
+  return src ? <img src={src} alt={alt} style={style} /> : <div className="skeleton" style={{ ...style, height: 'auto' }} aria-label={alt} />
+}
+
 export default function AdminKyc() {
   const { t, errText } = usePrefs()
   const [status, setStatus] = useState('pending')
   const list = useApi(`/admin/kyc${status ? `?status=${status}` : ''}`, { interval: 20000 })
   const [sheet, setSheet] = useState(null) // { item, approve, tier }
+  const [photo, setPhoto] = useState(null) // { path, label } shown large
   const [reason, setReason] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
@@ -56,12 +77,15 @@ export default function AdminKyc() {
                 <div className="kv"><span>{t('verificationTitle')}</span><span>{t('tier', { n: k.currentTier })}</span></div>
               </div>
               <div className="grid-3" style={{ gap: 8 }}>
-                {k.files.map((f) => (
-                  <a key={f.kind} href={`/api/admin/kyc/${k.id}/files/${f.kind}`} target="_blank" rel="noreferrer" className="stack" style={{ gap: 4 }}>
-                    <img src={`/api/admin/kyc/${k.id}/files/${f.kind}`} alt={f.kind} loading="lazy" style={{ width: '100%', aspectRatio: '4 / 3', objectFit: 'cover', borderRadius: 10, background: 'var(--surface-2)' }} />
-                    <span className="caption" style={{ textAlign: 'center' }}>{t(f.kind === 'front' ? 'frontPhoto' : f.kind === 'back' ? 'backPhoto' : 'selfiePhoto')}</span>
-                  </a>
-                ))}
+                {k.files.map((f) => {
+                  const label = t(f.kind === 'front' ? 'frontPhoto' : f.kind === 'back' ? 'backPhoto' : 'selfiePhoto')
+                  return (
+                    <button key={f.kind} type="button" className="stack plain-btn" style={{ gap: 4 }} onClick={() => setPhoto({ path: `/admin/kyc/${k.id}/files/${f.kind}`, label })}>
+                      <DocImage path={`/admin/kyc/${k.id}/files/${f.kind}`} alt={label} style={{ width: '100%', aspectRatio: '4 / 3', objectFit: 'cover', borderRadius: 10, background: 'var(--surface-2)' }} />
+                      <span className="caption" style={{ textAlign: 'center' }}>{label}</span>
+                    </button>
+                  )
+                })}
               </div>
               {k.reason && <span className="caption">{t('reason')}: {k.reason}</span>}
               {k.status === 'pending' && (
@@ -76,6 +100,12 @@ export default function AdminKyc() {
             </article>
           ))}
         </div>
+      )}
+      {photo && (
+        <Sheet title={photo.label} onClose={() => setPhoto(null)}>
+          <DocImage path={photo.path} alt={photo.label} style={{ width: '100%', maxHeight: '70vh', objectFit: 'contain', borderRadius: 12, background: 'var(--sunken)' }} />
+          <button type="button" className="btn btn-secondary" onClick={() => setPhoto(null)}>{t('close')}</button>
+        </Sheet>
       )}
       {sheet && (
         <Sheet title={sheet.approve ? (sheet.tier === 3 ? t('approveTier3') : t('approveTier2')) : t('reject')} onClose={() => setSheet(null)}>

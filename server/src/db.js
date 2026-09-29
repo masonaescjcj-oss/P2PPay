@@ -126,7 +126,8 @@ async function openDb(config, { log = console } = {}) {
     const dir = config.pgliteDir && config.pgliteDir !== ':memory:' ? config.pgliteDir : undefined;
     if (dir) fs.mkdirSync(dir, { recursive: true });
     const parsers = { [INT8]: (v) => Number(v), [NUMERIC]: (v) => Number(v) };
-    const lite = new PGlite(dir, { parsers });
+    // pgliteOptions: extra PGlite settings (the browser test build passes its file-system bundle).
+    const lite = new PGlite(dir, { parsers, ...config.pgliteOptions });
     await lite.waitReady;
     await lite.exec('CREATE SCHEMA IF NOT EXISTS app; SET search_path TO app, public;');
     const lock = createMutex();
