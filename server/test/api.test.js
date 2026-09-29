@@ -228,7 +228,7 @@ test('auth, admin guard and input validation', async (t) => {
   assert.equal((await c.post('/auth/register', { username: 'ab', password: 'password123' })).data.error, 'invalid_username');
   assert.equal((await c.post('/auth/register', { username: 'abc', password: 'short' })).data.error, 'weak_password');
   await s.user('dup6');
-  assert.equal((await c.post('/auth/register', { username: 'DUP6', password: 'password123' })).data.error, 'username_taken');
+  assert.equal((await c.post('/auth/register', { username: 'DUP6', password: 'password123', acceptTerms: true })).data.error, 'username_taken');
   assert.equal((await c.post('/auth/login', { username: 'dup6', password: 'wrongpass' })).status, 401);
   assert.equal((await c.post('/auth/login', { username: 'dup6', password: 'password123' })).status, 200);
   assert.equal((await c.get('/me')).data.username, 'dup6');

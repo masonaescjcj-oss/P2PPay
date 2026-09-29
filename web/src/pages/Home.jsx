@@ -1,4 +1,7 @@
 import { useState } from 'react'
+import { LegalText } from '../components/LegalContent.jsx'
+import Sheet from '../components/Sheet.jsx'
+import { api } from '../lib/api.js'
 import { Link } from 'react-router-dom'
 import { Girih, TetherMark } from '../components/Brand.jsx'
 import Icon from '../components/Icon.jsx'
@@ -62,7 +65,14 @@ export function BalanceCard({ wallet, afnPrice }) {
 
 export default function Home() {
   const { t } = usePrefs()
-  const { user, config } = useAuth()
+  const { user, config, refresh } = useAuth()
+  const [termsOpen, setTermsOpen] = useState(false)
+  const needsTerms = config?.termsVersion && user.termsCurrent === false
+  async function acceptTerms() {
+    await api.post('/me/accept-terms', { version: config.termsVersion })
+    setTermsOpen(false)
+    await refresh()
+  }
   const beta = config?.beta
   const betaOn = !!(beta && (beta.inviteOnly || beta.maxTrade || beta.label))
   const wallet = useApi('/wallet', { interval: 15000 })
@@ -98,6 +108,20 @@ export default function Home() {
             <span className="grow">{t('verifyToTrade')}</span>
             <span className="strong t-gold">{t('goVerify')}</span>
           </Link>
+        )}
+
+        {needsTerms && (
+          <div className="note gold" style={{ alignItems: 'center' }}>
+            <Icon name="flag" size={20} />
+            <span className="grow">{t('termsUpdated')}</span>
+            <button type="button" className="btn btn-secondary btn-sm" onClick={() => setTermsOpen(true)}>{t('readTerms')}</button>
+          </div>
+        )}
+        {termsOpen && (
+          <Sheet title={t('termsTitle')} onClose={() => setTermsOpen(false)}>
+            <div className="sheet-scroll"><LegalText doc="terms" /><LegalText doc="privacy" /></div>
+            <button type="button" className="btn btn-primary" onClick={acceptTerms}>{t('acceptTermsButton')}</button>
+          </Sheet>
         )}
 
         {betaOn && (

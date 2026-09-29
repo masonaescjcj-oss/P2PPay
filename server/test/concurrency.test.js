@@ -58,7 +58,7 @@ test('the same username registered in parallel: one account', async (t) => {
   t.after(s.close);
   const rs = await Promise.all(
     ['Twin_Name', 'twin_name', 'TWIN_NAME', 'twin_Name'].map((username) =>
-      s.client().post('/auth/register', { username, password: 'password123' }))
+      s.client().post('/auth/register', { username, password: 'password123', acceptTerms: true }))
   );
   assert.deepEqual(statuses(rs), [201, 409, 409, 409]);
 });

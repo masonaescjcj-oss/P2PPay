@@ -11,6 +11,7 @@ A peer-to-peer USDT ⇄ AFN marketplace for Afghanistan with escrow, local payme
 | [`supabase/`](supabase/migrations) | PostgreSQL schema (Supabase migrations) |
 | [`DEPLOY.md`](DEPLOY.md) | راهنمای استقرار: Supabase + Fly.io (Mumbai) |
 | [`BETA.md`](BETA.md) | بتای بسته: راه‌اندازی، راهنمای آزمایش‌کننده‌ها، شرط‌های پایان |
+| [`RELEASE.md`](RELEASE.md) | چک‌لیست انتشار عمومی |
 | [`ROADMAP.md`](ROADMAP.md) | نقشهٔ راه از صفر تا انتشار |
 
 Design (mobile, dark + light): https://claude.ai/artifact/GNCwZ5ttvWxCZt3wc5TPJK

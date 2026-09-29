@@ -1,5 +1,6 @@
 import { Navigate, Route, Routes, useLocation } from 'react-router-dom'
 import ErrorBoundary from './components/ErrorBoundary.jsx'
+import { OfflineBar } from './components/Layout.jsx'
 import { RequireAuth, useAuth } from './lib/auth.jsx'
 import Auth from './pages/Auth.jsx'
 import Chat from './pages/Chat.jsx'
@@ -12,6 +13,7 @@ import Orders from './pages/Orders.jsx'
 import PaymentAccounts from './pages/PaymentAccounts.jsx'
 import Profile from './pages/Profile.jsx'
 import Feedback from './pages/Feedback.jsx'
+import { HelpPage, LegalPage, SupportPage } from './pages/Info.jsx'
 import Security from './pages/Security.jsx'
 import Verification from './pages/Verification.jsx'
 import Trade from './pages/Trade.jsx'
@@ -36,6 +38,7 @@ export default function App() {
   const { pathname } = useLocation()
   return (
     <div className={pathname.startsWith('/admin') ? 'shell wide' : 'shell'}>
+      <OfflineBar />
       <ErrorBoundary resetKey={pathname}>
         <Routes>
           <Route path="/" element={user === null ? <Navigate to="/welcome" replace /> : priv(<Home />)} />
@@ -43,6 +46,10 @@ export default function App() {
           <Route path="/login" element={<Auth mode="login" />} />
           <Route path="/register" element={<Auth mode="register" />} />
           <Route path="/market" element={<Market />} />
+          <Route path="/terms" element={<LegalPage doc="terms" key="terms" />} />
+          <Route path="/privacy" element={<LegalPage doc="privacy" key="privacy" />} />
+          <Route path="/help" element={<HelpPage />} />
+          <Route path="/support" element={<SupportPage />} />
           <Route path="/offers/new" element={priv(<CreateOffer />)} />
           <Route path="/offers/:id" element={<Offer />} />
           <Route path="/trades/:id" element={priv(<Trade />)} />

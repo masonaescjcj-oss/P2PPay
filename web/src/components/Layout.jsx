@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react'
 import { NavLink, useNavigate } from 'react-router-dom'
 import { usePrefs } from '../lib/prefs.jsx'
 import Icon from './Icon.jsx'
@@ -47,6 +48,29 @@ export function TopBar({ title, sub, back = -1, children }) {
       </div>
       {children}
     </header>
+  )
+}
+
+// A thin bar while the device is offline; the app keeps its screens and retries when back online.
+export function OfflineBar() {
+  const { t } = usePrefs()
+  const [online, setOnline] = useState(() => navigator.onLine !== false)
+  useEffect(() => {
+    const on = () => setOnline(true)
+    const off = () => setOnline(false)
+    window.addEventListener('online', on)
+    window.addEventListener('offline', off)
+    return () => {
+      window.removeEventListener('online', on)
+      window.removeEventListener('offline', off)
+    }
+  }, [])
+  if (online) return null
+  return (
+    <div className="offline-bar" role="status">
+      <Icon name="globe" size={16} />
+      {t('offlineNote')}
+    </div>
   )
 }
 

@@ -92,7 +92,7 @@ async function setup(overrides = {}, deps = {}) {
 
   async function user(name, { verified = true } = {}) {
     const c = client();
-    const r = await c.post('/auth/register', { username: name, password: 'password123' });
+    const r = await c.post('/auth/register', { username: name, password: 'password123', acceptTerms: true });
     assert.equal(r.status, 201, JSON.stringify(r.data));
     if (verified) c.phone = await verifyPhone(c);
     return c;

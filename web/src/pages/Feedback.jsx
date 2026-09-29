@@ -14,7 +14,7 @@ export default function Feedback() {
   const { t, errText } = usePrefs()
   const location = useLocation()
   const mine = useApi('/feedback')
-  const [kind, setKind] = useState('bug')
+  const [kind, setKind] = useState(() => (KINDS.includes(location.state?.kind) ? location.state.kind : 'bug'))
   const [message, setMessage] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)

@@ -1354,3 +1354,113 @@ textarea::placeholder {
   cursor: zoom-in;
   text-align: inherit;
 }
+
+/* ---------- terms, privacy, help ---------- */
+.legal {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  font-size: 14px;
+  line-height: 2;
+  color: var(--text-2);
+  max-width: 68ch;
+}
+.legal section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.legal h2 {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text);
+  text-wrap: balance;
+}
+.legal ul,
+.steps {
+  margin: 0;
+  padding-inline-start: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.steps {
+  font-size: 14px;
+  line-height: 1.9;
+  color: var(--text-2);
+}
+.faq {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.faq summary {
+  cursor: pointer;
+  font-weight: 700;
+  font-size: 14px;
+  line-height: 1.8;
+}
+.faq summary:focus-visible {
+  outline: 2px solid var(--gold-line);
+  outline-offset: 4px;
+  border-radius: 6px;
+}
+.faq p {
+  margin-top: 8px;
+  font-size: 14px;
+  line-height: 1.95;
+  color: var(--text-2);
+}
+.sheet-scroll {
+  max-height: 55vh;
+  overflow-y: auto;
+  padding-inline-end: 4px;
+}
+.check-row {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  font-size: 13px;
+  line-height: 1.9;
+  color: var(--text-2);
+  cursor: pointer;
+}
+.check-row input {
+  width: 20px;
+  height: 20px;
+  margin-top: 4px;
+  flex-shrink: 0;
+  accent-color: var(--gold);
+}
+.btn-link.inline {
+  display: inline;
+  padding: 0;
+  height: auto;
+  font-size: inherit;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.footer-links {
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+}
+.footer-links a {
+  color: var(--muted);
+}
+
+.offline-bar {
+  position: sticky;
+  top: env(safe-area-inset-top, 0px);
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 8px 16px;
+  background: var(--coral-tint);
+  color: var(--coral-tint-text);
+  border-bottom: 1px solid var(--coral-tint-line);
+  font-size: 13px;
+  font-weight: 600;
+}

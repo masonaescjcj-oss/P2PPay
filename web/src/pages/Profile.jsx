@@ -4,6 +4,9 @@ import { TabBar } from '../components/Layout.jsx'
 import { useAuth } from '../lib/auth.jsx'
 import { initial } from '../lib/format.js'
 import { useApi } from '../lib/hooks.js'
+import { useState } from 'react'
+import Sheet from '../components/Sheet.jsx'
+import { useInstall } from '../lib/install.js'
 import { usePrefs } from '../lib/prefs.jsx'
 
 function Row({ icon, tone = 'neutral', label, value, to, onClick, children }) {
@@ -28,6 +31,8 @@ export default function Profile() {
   const accounts = useApi('/payment-accounts')
   const me = useApi('/me')
   const stats = me.data || user
+  const install = useInstall()
+  const [iosHelp, setIosHelp] = useState(false)
 
   return (
     <>
@@ -85,8 +90,28 @@ export default function Profile() {
           </Row>
           <Row icon="shieldCheck" tone="green" label={t('securityTitle')} value={user.totpEnabled ? '2FA ✓' : undefined} to="/profile/security" />
           <Row icon="chat" tone="blue" label={t('feedbackTitle')} to="/profile/feedback" />
-          <Row icon="headset" label={t('support')} value={t('soon')} />
+          {!install.installed && (install.canPrompt || install.ios) && (
+            <Row icon="phone" tone="gold" label={t('installApp')} onClick={() => (install.canPrompt ? install.prompt() : setIosHelp(true))} />
+          )}
         </section>
+
+        <section className="card flush">
+          <Row icon="search" label={t('helpTitle')} to="/help" />
+          <Row icon="headset" label={t('supportTitle')} to="/support" />
+          <Row icon="receipt" label={t('termsTitle')} to="/terms" />
+          <Row icon="lock" label={t('privacyTitle')} to="/privacy" />
+        </section>
+
+        {iosHelp && (
+          <Sheet title={t('installApp')} onClose={() => setIosHelp(false)}>
+            <ol className="steps">
+              <li>{t('iosStep1')}</li>
+              <li>{t('iosStep2')}</li>
+              <li>{t('iosStep3')}</li>
+            </ol>
+            <button type="button" className="btn btn-primary" onClick={() => setIosHelp(false)}>{t('done')}</button>
+          </Sheet>
+        )}
 
         <button
           type="button"

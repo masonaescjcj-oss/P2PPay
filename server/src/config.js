@@ -84,6 +84,16 @@ module.exports = {
   },
   alertLargeTradeMicro: int('ALERT_LARGE_TRADE_MICRO', 5_000_000_000),
 
+  // Terms of use + privacy notice version users must accept (bump it when the texts change).
+  termsVersion: process.env.TERMS_VERSION || '2026-10-01',
+  // Shown on the support page; empty entries are hidden.
+  support: {
+    email: process.env.SUPPORT_EMAIL || '',
+    phone: process.env.SUPPORT_PHONE || '',
+    telegram: process.env.SUPPORT_TELEGRAM || '',
+    hours: process.env.SUPPORT_HOURS || '',
+  },
+
   // Closed beta: sign-up only with an invite code, and small caps per trade and per offer (0 = no cap).
   beta: {
     inviteOnly: process.env.BETA_INVITE_ONLY === '1',

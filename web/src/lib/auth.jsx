@@ -11,14 +11,20 @@ export function AuthProvider({ children }) {
   const refresh = useCallback(async () => {
     try {
       setUser(await api.get('/me'))
-    } catch {
-      setUser(null)
+    } catch (err) {
+      // Offline is not "signed out": keep the current state and check again when back online.
+      if (err?.code !== 'network_error') setUser(null)
     }
   }, [])
 
   useEffect(() => {
-    refresh()
-    api.get('/config').then(setConfig, () => {})
+    const load = () => {
+      refresh()
+      api.get('/config').then(setConfig, () => {})
+    }
+    load()
+    window.addEventListener('online', load)
+    return () => window.removeEventListener('online', load)
   }, [refresh])
 
   // Returns { challenge } when the account has 2FA; finish with loginSecondFactor.

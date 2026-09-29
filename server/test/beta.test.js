@@ -5,7 +5,7 @@ const assert = require('node:assert/strict');
 const { setup } = require('./helpers');
 const baseConfig = require('../src/config');
 
-const register = (s, username, inviteCode) => s.client().post('/auth/register', { username, password: 'password123', inviteCode });
+const register = (s, username, inviteCode) => s.client().post('/auth/register', { username, password: 'password123', inviteCode, acceptTerms: true });
 
 test('invite-only sign-up: codes, usage limit, revocation, a failed sign-up keeps its slot', async (t) => {
   const s = await setup({ beta: { ...baseConfig.beta, inviteOnly: true } });
@@ -168,4 +168,28 @@ test('an unexpected server error is recorded with its route, and the client only
   assert.equal(errs[0].source, 'server');
   assert.equal(errs[0].message, 'boom 42');
   assert.equal(errs[0].page, 'GET /api/offers');
+});
+
+test('terms: required at sign-up, recorded with their version, re-accepted after a change', async (t) => {
+  const s = await setup({ termsVersion: '2026-10-01', support: { email: 'help@example.org', phone: '', telegram: '', hours: '' } });
+  t.after(s.close);
+  const cfg = (await s.client().get('/config')).data;
+  assert.equal(cfg.termsVersion, '2026-10-01');
+  assert.deepEqual(cfg.support, { email: 'help@example.org' }); // empty channels are not sent
+  const c = s.client();
+  assert.equal((await c.post('/auth/register', { username: 'noterms', password: 'password123' })).data.error, 'terms_required');
+  assert.equal((await c.post('/auth/register', { username: 'noterms', password: 'password123', acceptTerms: 'yes' })).data.error, 'terms_required');
+  assert.equal((await c.post('/auth/register', { username: 'withterms', password: 'password123', acceptTerms: true })).status, 201);
+  let me = (await c.get('/me')).data;
+  assert.equal(me.termsVersion, '2026-10-01');
+  assert.equal(me.termsCurrent, true);
+
+  // the texts change: the user is asked again, and only the current version can be accepted
+  s.config.termsVersion = '2026-12-01';
+  me = (await c.get('/me')).data;
+  assert.equal(me.termsCurrent, false);
+  assert.equal((await c.post('/me/accept-terms', { version: '2026-10-01' })).data.error, 'terms_outdated');
+  assert.equal((await c.post('/me/accept-terms', { version: '2026-12-01' })).status, 200);
+  assert.equal((await c.get('/me')).data.termsCurrent, true);
+  assert.ok((await c.get('/me/security')).data.events.some((e) => e.kind === 'terms_accepted'));
 });

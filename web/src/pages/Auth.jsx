@@ -1,6 +1,8 @@
 import { useState } from 'react'
 import { Link, Navigate, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import Icon from '../components/Icon.jsx'
+import { LegalText } from '../components/LegalContent.jsx'
+import Sheet from '../components/Sheet.jsx'
 import { useAuth } from '../lib/auth.jsx'
 import { usePrefs } from '../lib/prefs.jsx'
 
@@ -15,6 +17,8 @@ export default function Auth({ mode }) {
   // Invite links look like /register?invite=ABCD-EFGH
   const [form, setForm] = useState(() => ({ username: '', password: '', displayName: '', inviteCode: params.get('invite') || '' }))
   const [show, setShow] = useState(false)
+  const [accepted, setAccepted] = useState(false)
+  const [reading, setReading] = useState(null) // 'terms' | 'privacy'
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
   const isLogin = mode === 'login'
@@ -44,6 +48,7 @@ export default function Auth({ mode }) {
           password: form.password,
           displayName: form.displayName.trim() || undefined,
           inviteCode: form.inviteCode.trim() || undefined,
+          acceptTerms: accepted,
         })
         navigate('/profile/verification', { replace: true })
         return
@@ -149,9 +154,22 @@ export default function Auth({ mode }) {
           {!isLogin && <span className="hint">{t('passwordHint')}</span>}
         </div>
 
+        {!isLogin && (
+          <label className="check-row" htmlFor="terms-ok">
+            <input id="terms-ok" type="checkbox" checked={accepted} onChange={(e) => setAccepted(e.target.checked)} />
+            <span>
+              {t('acceptTermsA')}{' '}
+              <button type="button" className="btn-link inline" onClick={() => setReading('terms')}>{t('termsTitle')}</button>
+              {' '}{t('and')}{' '}
+              <button type="button" className="btn-link inline" onClick={() => setReading('privacy')}>{t('privacyTitle')}</button>
+              {' '}{t('acceptTermsB')}
+            </span>
+          </label>
+        )}
+
         {error && <p className="error-text" role="alert">{error}</p>}
 
-        <button type="submit" className="btn btn-primary" disabled={busy}>
+        <button type="submit" className="btn btn-primary" disabled={busy || (!isLogin && !accepted)}>
           {isLogin ? t('login') : t('register')}
         </button>
       </form>
@@ -163,6 +181,12 @@ export default function Auth({ mode }) {
         </div>
         <Link to="/market" className="btn-link" style={{ textAlign: 'center' }}>{t('browseMarket')}</Link>
       </div>
+      {reading && (
+        <Sheet title={t(reading === 'terms' ? 'termsTitle' : 'privacyTitle')} onClose={() => setReading(null)}>
+          <div className="sheet-scroll"><LegalText doc={reading} /></div>
+          <button type="button" className="btn btn-primary" onClick={() => { setAccepted(true); setReading(null) }}>{t('acceptAndClose')}</button>
+        </Sheet>
+      )}
     </main>
   )
 }

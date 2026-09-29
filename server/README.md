@@ -71,13 +71,14 @@ Errors are `{"error": "<code>"}` with an HTTP status; the web app maps codes to 
 | Method | Path | Who (admin routes: permission) | Body / query |
 |---|---|---|---|
 | GET | `/config` | public | – |
-| POST | `/auth/register` | public | `username, password, displayName?, inviteCode?` (required when `BETA_INVITE_ONLY=1`) |
+| POST | `/auth/register` | public | `username, password, acceptTerms: true, displayName?, inviteCode?` (invite required when `BETA_INVITE_ONLY=1`) |
 | GET, POST | `/feedback` | user | own feedback with staff replies / `kind (bug·idea·question·other), message, page?` |
 | POST | `/client-errors` | public | `message, stack?, page?` — browser crash reports (rate limited, grouped) |
 | POST | `/auth/login` | public | `username, password` |
 | POST | `/auth/login/2fa` | public | `challenge, code` |
 | POST | `/auth/logout` | user | – |
 | GET | `/me` | user | profile, role/perms, phone and 2FA state, KYC tier/limits/usage |
+| POST | `/me/accept-terms` | user | `version` — accept the current terms (`TERMS_VERSION`); `/me` has `termsCurrent` |
 | GET | `/me/security` | user | phone, 2FA, backup codes left, recent security events |
 | POST | `/me/phone`, `/me/phone/verify` | user | `phone` / `code` |
 | POST | `/me/totp/setup`, `/me/totp/enable`, `/me/totp/disable`, `/me/totp/backup-codes` | user | – / `code` |

@@ -11,9 +11,12 @@ import './styles/app.css'
 import App from './App.jsx'
 import { AuthProvider } from './lib/auth.jsx'
 import { PrefsProvider } from './lib/prefs.jsx'
+import { registerServiceWorker, startInstallCapture } from './lib/install.js'
 import { installErrorReporter } from './lib/report.js'
 
 installErrorReporter()
+startInstallCapture()
+registerServiceWorker()
 
 createRoot(document.getElementById('root')).render(
   <StrictMode>

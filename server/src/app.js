@@ -121,6 +121,8 @@ async function createApp(config, deps = {}) {
       minWithdraw: m.fmtUsdt(config.minWithdrawMicro),
       paymentMethods: config.paymentMethods,
       beta: beta.publicConfig(),
+      termsVersion: config.termsVersion,
+      support: Object.fromEntries(Object.entries(config.support || {}).filter(([, v]) => v)),
       kycLimits: Object.fromEntries(Object.entries(config.kycLimits).map(([k, v]) => [k, { trade: m.fmtUsdt(v.trade), withdraw: m.fmtUsdt(v.withdraw) }])),
     });
   });

@@ -17,6 +17,7 @@ function accountRoutes(api, ctx) {
     const displayName = String(req.body.displayName ?? '').trim().slice(0, 40) || username;
     if (!/^[a-zA-Z0-9_]{3,24}$/.test(username)) throw bad('invalid_username');
     if (password.length < 8 || password.length > 200) throw bad('weak_password');
+    if (req.body.acceptTerms !== true) throw bad('terms_required');
     const invite = String(req.body.inviteCode ?? '').trim();
     if (config.beta?.inviteOnly && !invite) throw bad('invite_required');
     const passwordHash = hashPassword(password);
@@ -25,8 +26,9 @@ function accountRoutes(api, ctx) {
     const row = await db.tx(async () => {
       const inviteId = invite ? await beta.consumeInvite(invite) : null;
       const r = await db.one(
-        'INSERT INTO users (username, display_name, password_hash, invite_id, created_at) VALUES (?, ?, ?, ?, ?) ON CONFLICT DO NOTHING RETURNING id',
-        [username, displayName, passwordHash, inviteId, Date.now()]
+        `INSERT INTO users (username, display_name, password_hash, invite_id, terms_version, terms_accepted_at, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING RETURNING id`,
+        [username, displayName, passwordHash, inviteId, config.termsVersion, Date.now(), Date.now()]
       );
       if (!r) throw conflict('username_taken');
       return r;
@@ -57,11 +59,21 @@ function accountRoutes(api, ctx) {
     res.json({ ok: true });
   });
 
+  // After the texts change, users accept the new version once.
+  api.post('/me/accept-terms', u, async (req, res) => {
+    if (req.body.version !== config.termsVersion) throw bad('terms_outdated');
+    await db.run('UPDATE users SET terms_version = ?, terms_accepted_at = ? WHERE id = ?', [config.termsVersion, Date.now(), req.user.id]);
+    await security.event(req.user.id, 'terms_accepted', req);
+    res.json({ ok: true, termsVersion: config.termsVersion });
+  });
+
   api.get('/me', u, async (req, res) => {
     const s = await security.summary(req.user.id);
+    const terms = await db.one('SELECT terms_version FROM users WHERE id = ?', [req.user.id]);
     res.json({
       ...req.user, ...(await market.stats(req.user.id)),
       phone: s.phone, phoneVerified: s.phoneVerified, totpEnabled: s.totpEnabled, kyc: await kyc.status(req.user.id),
+      termsVersion: terms.terms_version, termsCurrent: terms.terms_version === config.termsVersion,
     });
   });
 

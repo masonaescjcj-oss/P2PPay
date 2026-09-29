@@ -77,6 +77,12 @@ export default function Welcome() {
           <Icon name="shieldCheck" size={15} className="t-green" />
           HesabPay · M-Paisa · M-Hawala · {lang === 'fa' ? 'بانک · حواله' : 'Bank · Hawala'}
         </div>
+        <nav className="row caption footer-links" aria-label={t('helpTitle')}>
+          <Link to="/help">{t('helpTitle')}</Link>
+          <Link to="/terms">{t('termsTitle')}</Link>
+          <Link to="/privacy">{t('privacyTitle')}</Link>
+          <Link to="/support">{t('supportTitle')}</Link>
+        </nav>
       </div>
     </main>
   )
