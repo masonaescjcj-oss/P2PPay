@@ -47,7 +47,60 @@ function Ring({ left, total }) {
   )
 }
 
-function Result({ trade }) {
+// After a completed trade each side rates the other once.
+function RateCard({ trade, onRated }) {
+  const { t, errText } = usePrefs()
+  const [choice, setChoice] = useState(null)
+  const [comment, setComment] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState(null)
+  const other = trade.role === 'buyer' ? trade.seller : trade.buyer
+  if (trade.myRating) {
+    return (
+      <div className="note green" style={{ alignItems: 'center' }}>
+        <Icon name="thumbUp" size={18} />
+        <span>{t('ratedThanks')}</span>
+      </div>
+    )
+  }
+  async function send() {
+    setBusy(true)
+    setError(null)
+    try {
+      await api.post(`/trades/${trade.id}/rate`, { positive: choice, comment: comment.trim() || undefined })
+      onRated()
+    } catch (err) {
+      setError(errText(err))
+    } finally {
+      setBusy(false)
+    }
+  }
+  return (
+    <section className="card stack" style={{ gap: 12 }}>
+      <strong style={{ fontSize: 15 }}>{t('rateTitle', { n: other.displayName })}</strong>
+      <div className="grid-2">
+        <button type="button" className="rate-btn up" aria-pressed={choice === true} onClick={() => setChoice(true)}>
+          <Icon name="thumbUp" size={20} />{t('rateGood')}
+        </button>
+        <button type="button" className="rate-btn down" aria-pressed={choice === false} onClick={() => setChoice(false)}>
+          <Icon name="thumbUp" size={20} style={{ transform: 'scaleY(-1)' }} />{t('rateBad')}
+        </button>
+      </div>
+      {choice !== null && (
+        <>
+          <div className="input-box sm">
+            <label htmlFor="rc" className="sr-only">{t('rateComment')}</label>
+            <input id="rc" maxLength={300} placeholder={t('rateComment')} value={comment} onChange={(e) => setComment(e.target.value)} />
+          </div>
+          {error && <p className="error-text" role="alert">{error}</p>}
+          <button type="button" className="btn btn-primary" disabled={busy} onClick={send}>{t('rateSend')}</button>
+        </>
+      )}
+    </section>
+  )
+}
+
+function Result({ trade, onChange }) {
   const { t, pm } = usePrefs()
   const ok = trade.status === 'completed'
   const isBuyer = trade.role === 'buyer'
@@ -59,15 +112,11 @@ function Result({ trade }) {
         <Link to="/" className="icon-btn" aria-label={t('close')}><Icon name="x" stroke={2} /></Link>
       </div>
       <div className="stack" style={{ alignItems: 'center', gap: 10, textAlign: 'center' }}>
-        <svg width="120" height="120" viewBox="0 0 150 150" aria-hidden="true">
-          <g fill={ok ? 'var(--green-tint)' : 'var(--surface-2)'} stroke={ok ? 'var(--green-text)' : 'var(--line-strong)'} strokeWidth="1.5">
-            <rect x="31" y="31" width="88" height="88" />
-            <rect x="31" y="31" width="88" height="88" transform="rotate(45 75 75)" />
-            <rect x="31" y="31" width="88" height="88" fill="none" />
-          </g>
-          <circle cx="75" cy="75" r="34" fill={ok ? 'var(--green)' : 'var(--surface-3)'} />
+        <svg width="112" height="112" viewBox="0 0 150 150" aria-hidden="true">
+          <circle cx="75" cy="75" r="72" fill={ok ? 'var(--green-tint)' : 'var(--surface-2)'} />
+          <circle cx="75" cy="75" r="44" fill={ok ? 'var(--green)' : 'var(--surface-3)'} />
           {ok ? (
-            <path d="m60 76 10 10 20-22" fill="none" stroke="#06140F" strokeWidth="5" strokeLinecap="round" strokeLinejoin="round" />
+            <path d="m57 76 12 12 25-27" fill="none" stroke="#fff" strokeWidth="7" strokeLinecap="round" strokeLinejoin="round" />
           ) : (
             <path d="M63 63l24 24M87 63 63 87" fill="none" stroke="var(--muted)" strokeWidth="5" strokeLinecap="round" />
           )}
@@ -83,11 +132,12 @@ function Result({ trade }) {
       </div>
       <section className="card tight">
         <div className="kv"><span>{t('orderNo')}</span><span className="num">#{trade.id}</span></div>
-        <div className="kv"><span>{t('counterparty')}</span><span>{other.displayName}</span></div>
+        <div className="kv"><span>{t('counterparty')}</span><Link to={`/u/${other.username}`}>{other.displayName}</Link></div>
         <div className="kv"><span>{t('paid')}</span><span><span className="num">{afn(trade.fiat)}</span> ؋ · {pm(trade.paymentMethod)}</span></div>
         <div className="kv"><span>{t('price')}</span><span><span className="num">{rate(trade.price)}</span> ؋</span></div>
         {ok && <div className="kv"><span>{t('fee')}</span><span><span className="num">{usdt(trade.fee)}</span> USDT</span></div>}
       </section>
+      {ok && trade.myRating !== null && <RateCard trade={trade} onRated={onChange} />}
       <div className="stack push-end" style={{ gap: 10 }}>
         <Link to="/wallet" className="btn btn-primary">{t('viewWallet')}</Link>
         <Link to="/market" className="btn btn-secondary">{t('newTrade')}</Link>
@@ -111,7 +161,7 @@ export default function Trade() {
   const tr = trade.data
   if (trade.loading) return <main className="page"><Loading /></main>
   if (!tr) return <main className="page"><TopBar title={t('order')} back="/orders" /><p className="error-text">{errText(trade.error)}</p></main>
-  if (tr.status === 'completed' || tr.status === 'cancelled') return <Result trade={tr} />
+  if (tr.status === 'completed' || tr.status === 'cancelled') return <Result trade={tr} onChange={trade.reload} />
 
   const isBuyer = tr.role === 'buyer'
   const other = isBuyer ? tr.seller : tr.buyer

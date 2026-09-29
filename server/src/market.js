@@ -10,7 +10,8 @@ const OPEN = ['pending_payment', 'paid', 'disputed'];
 // so parallel requests cannot oversell an offer or move a trade twice. Lock order is trade → offer.
 //
 // hooks (all optional): assertCanPostOffer(userId), assertTrade({actorId, buyerId, sellerId, amount}),
-// onTradeOpened(trade), onBuyerCancelled(trade), onDispute(trade, userId)
+// onTradeOpened(trade), onBuyerCancelled(trade), onDispute(trade, userId),
+// notify(userId, kind, data) — called inside the transaction of the event
 function createMarket(db, wallet, config, hooks = {}) {
   const now = () => Date.now();
   const getOffer = (id, lock = false) => db.one(`SELECT * FROM offers WHERE id = ?${lock ? ' FOR UPDATE' : ''}`, [id]);
@@ -21,6 +22,8 @@ function createMarket(db, wallet, config, hooks = {}) {
   const getAccount = (userId, method) =>
     db.one('SELECT holder_name, account FROM payment_accounts WHERE user_id = ? AND method = ?', [userId, method]);
   const nameOf = (id) => db.one('SELECT id, username, display_name FROM users WHERE id = ?', [id]);
+  const notify = (userId, kind, data) => hooks.notify?.(userId, kind, data);
+  const other = (t, userId) => (t.buyer_id === userId ? t.seller_id : t.buyer_id);
 
   async function stats(userId) {
     const s = await db.one(
@@ -29,7 +32,16 @@ function createMarket(db, wallet, config, hooks = {}) {
        FROM trades WHERE buyer_id = ? OR seller_id = ?`,
       [userId, userId]
     );
-    return { completed: s.completed, completionRate: s.closed ? Math.round((s.completed / s.closed) * 100) : null };
+    const r = await db.one(
+      'SELECT COUNT(*) FILTER (WHERE positive) AS up, COUNT(*) FILTER (WHERE NOT positive) AS down FROM trade_ratings WHERE ratee_id = ?',
+      [userId]
+    );
+    const rated = r.up + r.down;
+    return {
+      completed: s.completed,
+      completionRate: s.closed ? Math.round((s.completed / s.closed) * 100) : null,
+      ratings: { up: r.up, down: r.down, positivePct: rated ? Math.round((r.up / rated) * 100) : null },
+    };
   }
 
   // ---------- serialization ----------
@@ -78,6 +90,9 @@ function createMarket(db, wallet, config, hooks = {}) {
       paidAt: t.paid_at,
       closedAt: t.closed_at,
       createdAt: t.created_at,
+      myRating: viewerId && t.status === 'completed' && (viewerId === t.buyer_id || viewerId === t.seller_id)
+        ? ((await db.one('SELECT positive, comment FROM trade_ratings WHERE trade_id = ? AND rater_id = ?', [t.id, viewerId])) ?? false)
+        : null,
     };
   }
 
@@ -214,6 +229,7 @@ function createMarket(db, wallet, config, hooks = {}) {
       // For a buy offer the taker is the seller: lock their USDT now.
       if (o.side === 'buy') await wallet.lock(sellerId, amount, 'trade_lock', { type: 'trade', id: trade.id });
       await sys(trade.id, 'trade_opened');
+      await notify(o.user_id, 'trade_opened', { tradeId: trade.id, amount: m.fmtUsdt(amount) });
       await hooks.onTradeOpened?.(trade);
       return trade;
     });
@@ -239,6 +255,16 @@ function createMarket(db, wallet, config, hooks = {}) {
     else await refund(t);
     await db.run('UPDATE trades SET status = ?, resolution = ?, closed_at = ? WHERE id = ?', [status, resolution, now(), t.id]);
     await sys(t.id, `trade_${resolution}`);
+    const data = { tradeId: t.id, amount: m.fmtUsdt(t.amount - t.fee), resolution };
+    if (resolution === 'released') await notify(t.buyer_id, 'trade_released', data);
+    else if (resolution.startsWith('resolved')) {
+      await notify(t.buyer_id, 'trade_resolved', data);
+      await notify(t.seller_id, 'trade_resolved', data);
+    } else if (resolution === 'cancelled_by_buyer') await notify(t.seller_id, 'trade_cancelled', data);
+    else {
+      await notify(t.buyer_id, 'trade_cancelled', data);
+      await notify(t.seller_id, 'trade_cancelled', data);
+    }
   }
 
   // Cancels unpaid trades whose payment window ended. Safe to run from several processes at once.
@@ -276,6 +302,7 @@ function createMarket(db, wallet, config, hooks = {}) {
           if (t.status !== 'pending_payment') throw conflict('invalid_state');
           await db.run("UPDATE trades SET status = 'paid', paid_at = ? WHERE id = ?", [now(), t.id]);
           await sys(t.id, 'trade_marked_paid');
+          await notify(t.seller_id, 'trade_paid', { tradeId: t.id, amount: m.fmtUsdt(t.amount) });
           break;
         case 'release':
           if (!isSeller) throw forbidden();
@@ -294,6 +321,7 @@ function createMarket(db, wallet, config, hooks = {}) {
           if (!reason) throw bad('reason_required');
           await db.run("UPDATE trades SET status = 'disputed', dispute_reason = ? WHERE id = ?", [reason, t.id]);
           await sys(t.id, 'trade_disputed');
+          await notify(other(t, userId), 'trade_disputed', { tradeId: t.id });
           after = () => hooks.onDispute?.(t, userId);
           break;
         }
@@ -354,17 +382,73 @@ function createMarket(db, wallet, config, hooks = {}) {
   }
 
   async function postMessage(userId, tradeId, body, isStaff = false) {
-    if (!isStaff) await loadForParty(userId, tradeId);
-    else if (!(await getTrade(tradeId))) throw notFound();
+    const t = isStaff ? await getTrade(tradeId) : await loadForParty(userId, tradeId);
+    if (!t) throw notFound();
     const text = String(body ?? '').trim().slice(0, 2000);
     if (!text) throw bad('empty_message');
-    await addMsg(tradeId, userId, text);
+    await db.tx(async () => {
+      await addMsg(tradeId, userId, text);
+      // Tell the other side (both sides when staff writes).
+      for (const uid of [t.buyer_id, t.seller_id]) if (uid !== userId) await notify(uid, 'trade_message', { tradeId: t.id });
+    });
     return { ok: true };
+  }
+
+  // ---------- ratings ----------
+  // Each side rates the other once, after a completed trade.
+  async function rate(userId, tradeId, input = {}) {
+    if (typeof input.positive !== 'boolean') throw bad('invalid_rating');
+    const comment = String(input.comment ?? '').trim().slice(0, 300) || null;
+    await db.tx(async () => {
+      const t = await loadForParty(userId, tradeId, true);
+      if (t.status !== 'completed') throw conflict('invalid_state');
+      const r = await db.run(
+        `INSERT INTO trade_ratings (trade_id, rater_id, ratee_id, positive, comment, created_at)
+         VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING`,
+        [t.id, userId, other(t, userId), input.positive, comment, now()]
+      );
+      if (!r.rowCount) throw conflict('already_rated');
+    });
+    return tradeView(await getTrade(tradeId), userId);
+  }
+
+  // ---------- public trader profile ----------
+  async function publicProfile(username) {
+    const u = await db.one(
+      "SELECT id, username, display_name, kyc_tier, created_at FROM users WHERE lower(username) = lower(?) AND role = 'user' AND is_blocked = 0",
+      [String(username ?? '')]
+    );
+    if (!u) throw notFound();
+    const release = await db.one(
+      `SELECT percentile_cont(0.5) WITHIN GROUP (ORDER BY closed_at - paid_at) AS ms, COUNT(*) AS n
+       FROM trades WHERE seller_id = ? AND status = 'completed' AND resolution = 'released' AND paid_at IS NOT NULL`,
+      [u.id]
+    );
+    const reviews = await db.query(
+      `SELECT r.positive, r.comment, r.created_at, (r.rater_id = t.buyer_id) AS rater_was_buyer
+       FROM trade_ratings r JOIN trades t ON t.id = r.trade_id WHERE r.ratee_id = ? ORDER BY r.created_at DESC LIMIT 20`,
+      [u.id]
+    );
+    const offers = await db.query(
+      "SELECT * FROM offers WHERE user_id = ? AND status = 'active' AND remaining > 0 ORDER BY id DESC LIMIT 10",
+      [u.id]
+    );
+    return {
+      username: u.username,
+      displayName: u.display_name,
+      verified: u.kyc_tier >= 2,
+      memberSince: u.created_at,
+      ...(await stats(u.id)),
+      medianReleaseMinutes: release.n && release.ms != null ? Math.max(1, Math.round(release.ms / 60_000)) : null,
+      reviews: reviews.map((r) => ({ positive: r.positive, comment: r.comment, createdAt: r.created_at, from: r.rater_was_buyer ? 'buyer' : 'seller' })),
+      offers: await Promise.all(offers.filter((o) => m.fiatFor(o.remaining, o.price) >= o.min_fiat).map(offerView)),
+    };
   }
 
   return {
     OPEN, stats, createOffer, setOfferStatus, listMarket, myOffers, offer,
     openTrade, action, resolveDispute, trade, myTrades, listTrades, messages, postMessage, expireTrades,
+    rate, publicProfile,
   };
 }
 

@@ -21,6 +21,7 @@ export default defineConfig({
       { find: /^node:async_hooks$/, replacement: shim('async_hooks.js') },
       { find: /^express$/, replacement: shim('express.js') },
       { find: /^pg$/, replacement: shim('empty.js') },
+      { find: /^web-push$/, replacement: shim('empty.js') },
       // one copy, resolved for the browser
       { find: /^@electric-sql\/pglite$/, replacement: path.join(here, 'node_modules/@electric-sql/pglite/dist/index.js') },
     ],

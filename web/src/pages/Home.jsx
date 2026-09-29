@@ -72,6 +72,7 @@ export default function Home() {
   const betaOn = !!(beta && (beta.inviteOnly || beta.maxTrade || beta.label))
   const wallet = useApi('/wallet', { interval: 15000 })
   const trades = useApi('/trades', { interval: 10000 })
+  const unread = useApi('/notifications/unread', { interval: 15000 }).data?.unread || 0
   const buyOffers = useApi('/offers?side=buy')
   const sellOffers = useApi('/offers?side=sell')
 
@@ -91,9 +92,9 @@ export default function Home() {
               <span style={{ fontSize: 17, fontWeight: 700 }}>{user.displayName}</span>
             </div>
           </div>
-          <Link to="/orders" className="icon-btn" aria-label={t('orders')}>
+          <Link to="/notifications" className="icon-btn" aria-label={t('notificationsTitle')}>
             <Icon name="bell" />
-            {active.length > 0 && <span className="dot" />}
+            {unread > 0 && <span className="count num">{unread > 99 ? '99+' : unread}</span>}
           </Link>
         </div>
 

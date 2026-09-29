@@ -3,6 +3,7 @@ import { useLocation } from 'react-router-dom'
 import Icon from '../components/Icon.jsx'
 import { Empty, Loading, Toast, TopBar } from '../components/Layout.jsx'
 import { api } from '../lib/api.js'
+import { dateOf } from '../lib/format.js'
 import { useApi, useToast } from '../lib/hooks.js'
 import { usePrefs } from '../lib/prefs.jsx'
 
@@ -11,7 +12,7 @@ const STATUS_TONE = { new: 'neutral', seen: 'blue', done: 'green' }
 
 // Beta testers tell the team what broke or what they would change, and read the team's answers.
 export default function Feedback() {
-  const { t, errText } = usePrefs()
+  const { t, lang, errText } = usePrefs()
   const location = useLocation()
   const mine = useApi('/feedback')
   const [kind, setKind] = useState(() => (KINDS.includes(location.state?.kind) ? location.state.kind : 'bug'))
@@ -82,7 +83,7 @@ export default function Feedback() {
                   <span><strong>{t('teamReply')}: </strong>{f.reply}</span>
                 </div>
               )}
-              <span className="caption num">{new Date(f.createdAt).toLocaleDateString()}</span>
+              <span className="caption">{dateOf(f.createdAt, lang)}</span>
             </article>
           ))}
         </div>

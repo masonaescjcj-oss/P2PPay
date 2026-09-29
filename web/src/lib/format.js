@@ -39,3 +39,12 @@ export function dayKey(ts) {
   if (d.toDateString() === y.toDateString()) return 'yesterday'
   return d.toISOString().slice(0, 10)
 }
+
+// Dates as people in Afghanistan read them: Solar Hijri months (حمل، ثور …) in Dari, Latin digits.
+export function dateOf(ts, lang, opts = { year: 'numeric', month: 'long', day: 'numeric' }) {
+  try {
+    return new Date(ts).toLocaleDateString(lang === 'fa' ? 'fa-AF-u-nu-latn' : 'en-GB', opts)
+  } catch {
+    return new Date(ts).toISOString().slice(0, 10)
+  }
+}

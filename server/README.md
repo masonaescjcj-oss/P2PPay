@@ -79,6 +79,12 @@ Errors are `{"error": "<code>"}` with an HTTP status; the web app maps codes to 
 | POST | `/auth/logout` | user | – |
 | GET | `/me` | user | profile, role/perms, phone and 2FA state, KYC tier/limits/usage |
 | POST | `/me/accept-terms` | user | `version` — accept the current terms (`TERMS_VERSION`); `/me` has `termsCurrent` |
+| GET | `/notifications`, `/notifications/unread` | user | `before?` — newest 50 + unread count |
+| POST | `/notifications/read` | user | `ids: [..]` or `all: true` |
+| GET | `/push/key` | public | VAPID public key (null = push off) |
+| POST | `/push/subscribe`, `/push/unsubscribe` | user | a browser PushSubscription + `lang` / `endpoint` |
+| POST | `/trades/:id/rate` | trade party | `positive: bool, comment?` — once, after completion |
+| GET | `/users/:username` | public | trader profile: stats, ratings, median release time, reviews, active offers |
 | GET | `/me/security` | user | phone, 2FA, backup codes left, recent security events |
 | POST | `/me/phone`, `/me/phone/verify` | user | `phone` / `code` |
 | POST | `/me/totp/setup`, `/me/totp/enable`, `/me/totp/disable`, `/me/totp/backup-codes` | user | – / `code` |

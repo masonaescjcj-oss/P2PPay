@@ -18,6 +18,7 @@ const { createSecurity } = require('./security/service');
 const { createKyc } = require('./kyc');
 const { createAlerts } = require('./alerts');
 const { createBeta } = require('./beta');
+const { createNotifier } = require('./notify');
 const { accountRoutes } = require('./routes/account');
 const { adminRoutes } = require('./routes/admin');
 const m = require('./money');
@@ -34,29 +35,34 @@ async function createApp(config, deps = {}) {
   const wallet = createWallet(db);
   const box = createSecretBox(loadDataKey(config, log));
   const alerts = createAlerts(db, config);
+  const notifier = createNotifier(db, config, { push: deps.push, log });
+  const notify = (userId, kind, data) => notifier.notify(userId, kind, data);
   const storage = deps.storage || createStorage(config);
-  const kyc = createKyc(db, config, { box, storage });
+  const kyc = createKyc(db, config, { box, storage, notify });
   const market = createMarket(db, wallet, config, {
     assertCanPostOffer: kyc.assertCanPostOffer,
     assertTrade: kyc.assertTrade,
     onTradeOpened: alerts.onTradeOpened,
     onBuyerCancelled: alerts.onBuyerCancelled,
     onDispute: alerts.onDispute,
+    notify,
   });
   const chainOn = config.tron && config.tron.network !== 'off';
   const chain = chainOn
     ? createChain(db, wallet, config, {
       client: deps.tronClient || createTronClient({ apiUrl: config.tron.apiUrl, apiKey: config.tron.apiKey }),
       log,
+      notify,
     })
     : null;
   const funds = createFunds(db, wallet, config, {
     isBlockedAddress: chain ? chain.isPlatformAddress : null,
     beforeWithdraw: kyc.assertWithdraw,
     onWithdrawal: alerts.onWithdrawalRequested,
+    notify,
   });
   const auth = createAuth(db, config);
-  const beta = createBeta(db, config, { box });
+  const beta = createBeta(db, config, { box, notify });
   const security = createSecurity(db, config, { box, sms: deps.sms || createSmsSender(config, { log }), alerts, log });
 
   await seedAdmin(db, config);
@@ -129,6 +135,25 @@ async function createApp(config, deps = {}) {
 
   const ctx = { db, config, wallet, market, funds, chain, chainOn, auth, security, kyc, alerts, beta, u, id };
   accountRoutes(api, ctx);
+
+  // ---------- notifications ----------
+  api.get('/notifications', u, async (req, res) => res.json(await notifier.list(req.user.id, Number(req.query.before) || null)));
+  api.get('/notifications/unread', u, async (req, res) => res.json({ unread: await notifier.unread(req.user.id) }));
+  api.post('/notifications/read', u, async (req, res) =>
+    res.json({ unread: await notifier.markRead(req.user.id, req.body.all === true ? 'all' : req.body.ids) })
+  );
+  api.get('/push/key', (_req, res) => res.json({ publicKey: notifier.publicKey() }));
+  api.post('/push/subscribe', u, rateLimit({ windowMs: 60 * 60_000, max: 20 }), async (req, res) => {
+    await notifier.subscribe(req.user.id, req.body);
+    res.status(201).json({ ok: true });
+  });
+  api.post('/push/unsubscribe', u, async (req, res) => {
+    await notifier.unsubscribe(req.user.id, req.body.endpoint);
+    res.json({ ok: true });
+  });
+
+  // ---------- public trader profiles ----------
+  api.get('/users/:username', async (req, res) => res.json(await market.publicProfile(req.params.username)));
 
   // ---------- beta: feedback and error reports ----------
   api.get('/feedback', u, async (req, res) => res.json(await beta.myFeedback(req.user.id)));
@@ -228,6 +253,7 @@ async function createApp(config, deps = {}) {
   for (const action of ['pay', 'release', 'cancel', 'dispute']) {
     api.post(`/trades/:id/${action}`, u, async (req, res) => res.json(await market.action(req.user.id, id(req), action, req.body)));
   }
+  api.post('/trades/:id/rate', u, async (req, res) => res.json(await market.rate(req.user.id, id(req), req.body)));
   api.get('/trades/:id/messages', u, async (req, res) =>
     res.json(await market.messages(req.user.id, id(req), Number(req.query.after) || 0, isStaff(req)))
   );
@@ -257,15 +283,17 @@ async function createApp(config, deps = {}) {
   const sweeper = setInterval(() => market.expireTrades().catch((e) => log.error('[market] expire', e.message)), 30_000);
   sweeper.unref();
   if (chain && deps.autoStartChain !== false) chain.start();
+  if (deps.autoStartPush !== false) notifier.start();
   app.locals.close = async () => {
     clearInterval(sweeper);
+    notifier.stop();
     await chain?.stop();
     await db.close();
   };
   app.locals.db = db;
   app.locals.chain = chain;
   // For tools that run in-process (the browser test build seeds sample traders with these).
-  app.locals.services = { wallet, market, funds, security, beta };
+  app.locals.services = { wallet, market, funds, security, beta, notifier };
   return app;
 }
 

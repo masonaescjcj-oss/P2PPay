@@ -10,7 +10,7 @@ const TXID = /^(0x)?[0-9a-fA-F]{64}$/;
 // in chain mode (chain.js) deposits are detected and withdrawals sent automatically.
 // isBlockedAddress: addresses users may not withdraw to (the platform's own wallets).
 // beforeWithdraw(userId, amount): throws when limits forbid it; onWithdrawal(userId, amount, address): after.
-function createFunds(db, wallet, config, { isBlockedAddress, beforeWithdraw, onWithdrawal } = {}) {
+function createFunds(db, wallet, config, { isBlockedAddress, beforeWithdraw, onWithdrawal, notify = async () => {} } = {}) {
   const now = () => Date.now();
 
   const depView = (d) => ({
@@ -56,6 +56,7 @@ function createFunds(db, wallet, config, { isBlockedAddress, beforeWithdraw, onW
         [approve ? 'approved' : 'rejected', amount || d.amount, input.note ? String(input.note).slice(0, 500) : null, now(), d.id]
       );
       if (approve) await wallet.credit(d.user_id, amount, 'deposit', { type: 'deposit', id: d.id });
+      await notify(d.user_id, approve ? 'deposit_credited' : 'deposit_rejected', { amount: m.fmtUsdt(amount || d.amount) });
       return depView(row);
     });
   }
@@ -107,6 +108,7 @@ function createFunds(db, wallet, config, { isBlockedAddress, beforeWithdraw, onW
         'UPDATE withdrawals SET status = ?, txid = ?, note = ?, reviewed_at = ? WHERE id = ? RETURNING *',
         [approve ? 'sent' : 'rejected', txid, input.note ? String(input.note).slice(0, 500) : null, now(), w.id]
       );
+      await notify(w.user_id, approve ? 'withdrawal_sent' : 'withdrawal_rejected', { amount: m.fmtUsdt(w.amount) });
       return wdView(row);
     });
   }

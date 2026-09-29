@@ -54,3 +54,39 @@ self.addEventListener('fetch', (event) => {
     )
   }
 })
+
+// Phone notifications from the server (Web Push). The payload carries title, body, url and a tag
+// so updates about the same trade replace each other instead of piling up.
+self.addEventListener('push', (event) => {
+  let n = {}
+  try {
+    n = event.data ? event.data.json() : {}
+  } catch {
+    n = { title: 'P2PPay', body: event.data?.text() || '' }
+  }
+  event.waitUntil(
+    self.registration.showNotification(n.title || 'P2PPay', {
+      body: n.body || '',
+      icon: '/icons/icon-192.png',
+      badge: '/icons/icon-192.png',
+      tag: n.tag,
+      renotify: !!n.tag,
+      data: { url: n.url || '/' },
+    })
+  )
+})
+
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close()
+  const url = event.notification.data?.url || '/'
+  event.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((wins) => {
+      const win = wins.find((w) => new URL(w.url).origin === location.origin)
+      if (win) {
+        win.navigate(url)
+        return win.focus()
+      }
+      return self.clients.openWindow(url)
+    })
+  )
+})

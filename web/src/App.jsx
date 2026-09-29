@@ -13,6 +13,8 @@ import Orders from './pages/Orders.jsx'
 import PaymentAccounts from './pages/PaymentAccounts.jsx'
 import Profile from './pages/Profile.jsx'
 import Feedback from './pages/Feedback.jsx'
+import Notifications from './pages/Notifications.jsx'
+import TraderProfile from './pages/TraderProfile.jsx'
 import { HelpPage, LegalPage, SupportPage } from './pages/Info.jsx'
 import Security from './pages/Security.jsx'
 import Verification from './pages/Verification.jsx'
@@ -49,6 +51,8 @@ export default function App() {
           <Route path="/terms" element={<LegalPage doc="terms" key="terms" />} />
           <Route path="/privacy" element={<LegalPage doc="privacy" key="privacy" />} />
           <Route path="/help" element={<HelpPage />} />
+          <Route path="/u/:username" element={<TraderProfile />} />
+          <Route path="/notifications" element={priv(<Notifications />)} />
           <Route path="/support" element={<SupportPage />} />
           <Route path="/offers/new" element={priv(<CreateOffer />)} />
           <Route path="/offers/:id" element={<Offer />} />

@@ -1,4 +1,5 @@
 import { Link } from 'react-router-dom'
+import Icon from './Icon.jsx'
 import { afn, initial, rate, usdt } from '../lib/format.js'
 import { usePrefs } from '../lib/prefs.jsx'
 
@@ -15,16 +16,22 @@ export function MakerLine({ maker }) {
   const { t } = usePrefs()
   return (
     <div className="grow stack" style={{ gap: 2 }}>
-      <div className="row" style={{ gap: 5, fontSize: 14, fontWeight: 700 }}>
+      <Link to={`/u/${maker.username}`} className="row" style={{ gap: 5, fontSize: 14.5, fontWeight: 700, color: 'var(--text)' }}>
         {maker.displayName}
         {maker.completed >= 10 && <VerifiedBadge />}
-      </div>
+      </Link>
       <div className="caption" style={{ fontSize: 11.5 }}>
         <span className="num">{maker.completed}</span> {t('trades')}
         {maker.completionRate !== null && (
           <>
             {' · '}
             <span className="num">{maker.completionRate}%</span> {t('completion')}
+          </>
+        )}
+        {maker.ratings?.positivePct != null && (
+          <>
+            {' · '}
+            <span className="rating-inline"><Icon name="thumbUp" size={11} stroke={2.2} /><span className="num">{maker.ratings.positivePct}%</span></span>
           </>
         )}
       </div>

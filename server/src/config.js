@@ -84,6 +84,13 @@ module.exports = {
   },
   alertLargeTradeMicro: int('ALERT_LARGE_TRADE_MICRO', 5_000_000_000),
 
+  // Web Push (phone notifications). Generate once: npx web-push generate-vapid-keys
+  push: {
+    publicKey: process.env.VAPID_PUBLIC_KEY || '',
+    privateKey: process.env.VAPID_PRIVATE_KEY || '',
+    subject: process.env.VAPID_SUBJECT || 'mailto:support@p2ppay.example',
+  },
+
   // Terms of use + privacy notice version users must accept (bump it when the texts change).
   termsVersion: process.env.TERMS_VERSION || '2026-10-01',
   // Shown on the support page; empty entries are hidden.

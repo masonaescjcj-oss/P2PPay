@@ -53,7 +53,8 @@ fly secrets set \
   TWILIO_ACCOUNT_SID='…' TWILIO_AUTH_TOKEN='…' TWILIO_FROM='+1…' \
   TRONGRID_API_KEY='…' \
   WALLET_MNEMONIC='…24 کلمه از npm run wallet:new…' \
-  COLD_WALLET_ADDRESS='T…'
+  COLD_WALLET_ADDRESS='T…' \
+  VAPID_PUBLIC_KEY='…' VAPID_PRIVATE_KEY='…' VAPID_SUBJECT='mailto:support@…'   # npx web-push generate-vapid-keys
 ```
 
 - `DATA_ENCRYPTION_KEY` و `WALLET_MNEMONIC` را **جداگانه و آفلاین** پشتیبان بگیرید. گم شدن کلید رمزگذاری = غیرقابل‌خواندن شدن مدارک KYC و 2FA؛ گم شدن mnemonic = از دست رفتن دسترسی به آدرس‌های واریز.

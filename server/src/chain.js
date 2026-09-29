@@ -12,6 +12,7 @@
 const { createKeyring, isAddress, addressToBytes } = require('./tron/keys');
 const txb = require('./tron/tx');
 const { bad, conflict, notFound } = require('./errors');
+const m = require('./money');
 
 const DAY = 86_400_000;
 const TRANSFER_TOPIC = 'ddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef';
@@ -19,7 +20,7 @@ const hex20 = (address) => Buffer.from(addressToBytes(address)).toString('hex').
 const EXPIRY_GRACE = 5 * 60_000;
 const LEADER_KEY = 727171;
 
-function createChain(db, wallet, config, { client, log = console }) {
+function createChain(db, wallet, config, { client, log = console, notify = async () => {} }) {
   const c = config.tron;
   const keyring = createKeyring(c.mnemonic);
   const now = () => Date.now();
@@ -93,6 +94,7 @@ function createChain(db, wallet, config, { client, log = console }) {
       );
       if (!d || !ok) return false;
       await wallet.credit(row.user_id, amount, 'deposit', { type: 'deposit', id: d.id });
+      await notify(row.user_id, 'deposit_credited', { amount: m.fmtUsdt(amount) });
       await db.run('UPDATE deposit_addresses SET needs_sweep = 1 WHERE user_id = ?', [row.user_id]);
       return true;
     });
@@ -173,7 +175,10 @@ function createChain(db, wallet, config, { client, log = console }) {
         "UPDATE withdrawals SET status = 'sent', reviewed_at = ? WHERE id = ? AND status IN ('sending','failed') AND txid = ?",
         [now(), w.id, w.txid]
       );
-      if (done.rowCount) await wallet.burnLocked(w.user_id, w.amount + w.fee, 'withdrawal', { type: 'withdrawal', id: w.id });
+      if (done.rowCount) {
+        await wallet.burnLocked(w.user_id, w.amount + w.fee, 'withdrawal', { type: 'withdrawal', id: w.id });
+        await notify(w.user_id, 'withdrawal_sent', { amount: m.fmtUsdt(w.amount) });
+      }
       return 'sent';
     });
   }

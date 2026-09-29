@@ -18,7 +18,7 @@ function newInviteCode() {
   return `${c.slice(0, 4)}-${c.slice(4)}`;
 }
 
-function createBeta(db, config, { box }) {
+function createBeta(db, config, { box, notify = async () => {} }) {
   const now = () => Date.now();
   const inviteHash = (code) => box.mac(`invite:${normalizeInvite(code)}`);
 
@@ -115,6 +115,7 @@ function createBeta(db, config, { box }) {
       [status, reply, reply, reply, staffId, reply, now(), id]
     );
     if (!row) throw notFound();
+    if (reply) await notify(row.user_id, 'feedback_reply', {});
     return feedbackView(row);
   }
 

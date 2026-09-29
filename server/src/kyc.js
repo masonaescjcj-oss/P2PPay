@@ -20,7 +20,7 @@ function sniffImage(buf) {
   return null;
 }
 
-function createKyc(db, config, { box, storage }) {
+function createKyc(db, config, { box, storage, notify = async () => {} }) {
   const now = () => Date.now();
   const tierOf = async (userId) => (await db.one('SELECT kyc_tier FROM users WHERE id = ?', [userId]))?.kyc_tier ?? 0;
   const limitsOf = (tier) => config.kycLimits[tier] || config.kycLimits[0];
@@ -172,6 +172,7 @@ function createKyc(db, config, { box, storage }) {
         [approve ? 'approved' : 'rejected', approve ? t : null, why || null, reviewerId, now(), s.id]
       );
       if (approve) await db.run('UPDATE users SET kyc_tier = GREATEST(kyc_tier, ?) WHERE id = ?', [t, s.user_id]);
+      await notify(s.user_id, approve ? 'kyc_approved' : 'kyc_rejected', approve ? { tier: t } : {});
       return submissionView(row, true);
     });
   }
