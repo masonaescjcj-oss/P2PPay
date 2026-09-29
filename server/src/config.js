@@ -41,6 +41,28 @@ module.exports = {
   fiat: 'AFN',
   paymentMethods: ['hesabpay', 'mpaisa', 'mhawala', 'bank', 'hawala', 'cash'],
 
+  nodeEnv: process.env.NODE_ENV || 'development',
+  // 64 hex chars (32 bytes). Encrypts TOTP secrets and KYC documents. Required in production.
+  dataKey: process.env.DATA_ENCRYPTION_KEY || '',
+  kycDir: process.env.KYC_DIR || path.join(__dirname, '..', 'data', 'kyc'),
+  sms: {
+    // console = print codes to the server log (development only); twilio = send real SMS
+    provider: process.env.SMS_PROVIDER || 'console',
+    twilioSid: process.env.TWILIO_ACCOUNT_SID || '',
+    twilioToken: process.env.TWILIO_AUTH_TOKEN || '',
+    twilioFrom: process.env.TWILIO_FROM || '',
+  },
+  // Staff (admin, finance, support) must use an authenticator app to act.
+  requireStaff2fa: process.env.REQUIRE_STAFF_2FA !== '0',
+  // Rolling 24h limits per KYC tier, in micro-USDT: trade volume (as buyer or seller) and withdrawals.
+  kycLimits: {
+    0: { trade: 0, withdraw: 0 },
+    1: { trade: int('LIMIT_TIER1_MICRO', 1_000_000_000), withdraw: int('LIMIT_TIER1_MICRO', 1_000_000_000) },
+    2: { trade: int('LIMIT_TIER2_MICRO', 20_000_000_000), withdraw: int('LIMIT_TIER2_MICRO', 20_000_000_000) },
+    3: { trade: int('LIMIT_TIER3_MICRO', 200_000_000_000), withdraw: int('LIMIT_TIER3_MICRO', 200_000_000_000) },
+  },
+  alertLargeTradeMicro: int('ALERT_LARGE_TRADE_MICRO', 5_000_000_000),
+
   // On-chain mode. 'off' keeps the manual flow (shared DEPOSIT_ADDRESS, admin records txids).
   tron: {
     network,

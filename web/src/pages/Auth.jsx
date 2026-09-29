@@ -6,16 +6,19 @@ import { usePrefs } from '../lib/prefs.jsx'
 
 export default function Auth({ mode }) {
   const { t, errText } = usePrefs()
-  const { user, login, register } = useAuth()
+  const { user, login, loginSecondFactor, register } = useAuth()
+  const [challenge, setChallenge] = useState(null)
+  const [code, setCode] = useState('')
   const navigate = useNavigate()
   const location = useLocation()
-  const [form, setForm] = useState({ username: '', password: '', displayName: '', phone: '' })
+  const [form, setForm] = useState({ username: '', password: '', displayName: '' })
   const [show, setShow] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
   const isLogin = mode === 'login'
 
-  if (user) return <Navigate to={location.state?.from || '/'} replace />
+  // New accounts continue to verification; logins go back where they came from.
+  if (user) return <Navigate to={isLogin ? location.state?.from || '/' : '/profile/verification'} replace />
 
   const set = (k) => (e) => setForm({ ...form, [k]: e.target.value })
 
@@ -24,20 +27,51 @@ export default function Auth({ mode }) {
     setBusy(true)
     setError(null)
     try {
-      if (isLogin) await login(form.username.trim(), form.password)
-      else
-        await register({
-          username: form.username.trim(),
-          password: form.password,
-          displayName: form.displayName.trim() || undefined,
-          phone: form.phone.trim() ? `+93${form.phone.replace(/\D/g, '').replace(/^0/, '')}` : undefined,
-        })
+      if (challenge) {
+        await loginSecondFactor(challenge, code.trim())
+      } else if (isLogin) {
+        const r = await login(form.username.trim(), form.password)
+        if (r.challenge) {
+          setChallenge(r.challenge)
+          return
+        }
+      } else {
+        await register({ username: form.username.trim(), password: form.password, displayName: form.displayName.trim() || undefined })
+        navigate('/profile/verification', { replace: true })
+        return
+      }
       navigate(location.state?.from || '/', { replace: true })
     } catch (err) {
+      if (err.code === 'challenge_expired') setChallenge(null)
       setError(errText(err))
     } finally {
       setBusy(false)
     }
+  }
+
+  if (challenge) {
+    return (
+      <main className="page" style={{ gap: 22 }}>
+        <div className="between">
+          <button type="button" className="icon-btn" aria-label={t('back')} onClick={() => { setChallenge(null); setCode(''); setError(null) }}>
+            <Icon name="back" />
+          </button>
+        </div>
+        <div className="stack">
+          <span className="icon-tile green" style={{ width: 56, height: 56, borderRadius: 18 }}><Icon name="shieldCheck" size={28} /></span>
+          <h1 className="display" style={{ fontSize: 26, lineHeight: 1.5 }}>{t('twoFactorTitle')}</h1>
+          <p className="muted" style={{ fontSize: 14, lineHeight: 1.9 }}>{t('twoFactorSub')}</p>
+        </div>
+        <form className="stack" style={{ gap: 16 }} onSubmit={submit}>
+          <label htmlFor="code2fa" className="label">{t('code')}</label>
+          <div className="input-box">
+            <input id="code2fa" dir="ltr" inputMode="numeric" autoComplete="one-time-code" autoFocus value={code} onChange={(e) => setCode(e.target.value)} style={{ fontSize: 22, letterSpacing: 6, textAlign: 'center' }} />
+          </div>
+          {error && <p className="error-text" role="alert">{error}</p>}
+          <button type="submit" className="btn btn-primary" disabled={busy || code.trim().length < 6}>{t('verify')}</button>
+        </form>
+      </main>
+    )
   }
 
   return (
@@ -73,13 +107,6 @@ export default function Auth({ mode }) {
               <label htmlFor="displayName" className="label">{t('displayName')}</label>
               <div className="input-box">
                 <input id="displayName" autoComplete="nickname" value={form.displayName} onChange={set('displayName')} maxLength={40} />
-              </div>
-            </div>
-            <div className="field">
-              <label htmlFor="phone" className="label">{t('phone')}</label>
-              <div className="input-box" dir="ltr">
-                <span className="unit">+93</span>
-                <input id="phone" type="tel" inputMode="tel" autoComplete="tel-national" placeholder="70 123 4567" value={form.phone} onChange={set('phone')} />
               </div>
             </div>
           </>

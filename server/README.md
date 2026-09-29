@@ -30,23 +30,45 @@ The trade fee (`TRADE_FEE_BPS`, default 0.1%) is deducted from the USDT the buye
 
 ## Auth
 
-Session cookie (`HttpOnly`, `SameSite=Strict`). Every non-GET request must be `Content-Type: application/json` (CSRF guard).
-Errors are `{"error": "<code>"}` with an HTTP status; the web app maps codes to Dari/Pashto/English messages.
+Session cookie (`HttpOnly`, `SameSite=Strict`). Every non-GET request must be `Content-Type: application/json` (CSRF guard); the only exception is KYC image upload, which must carry `x-p2ppay-upload: 1` (a header a cross-site form cannot set).
+Errors are `{"error": "<code>"}` with an HTTP status; the web app maps codes to Dari/English messages.
+
+## Security & compliance
+
+| Area | How it works |
+|---|---|
+| Phone verification | `POST /me/phone` sends a 6-digit SMS code (5 min, 5 attempts, stored as an HMAC), `POST /me/phone/verify` confirms it. One verified number per account. Grants KYC tier 1. |
+| Authenticator 2FA | RFC 6238 TOTP (tested against the RFC vectors). Secrets are encrypted at rest; codes cannot be replayed. Enabling returns 10 one-time backup codes and signs out other sessions. |
+| Login | `POST /auth/login` → `{ twoFactor, challenge }` when 2FA is on → `POST /auth/login/2fa`. Wrong passwords **and** wrong 2FA codes share a counter: 8 failures lock the account for 15 minutes. Password change signs out other sessions. |
+| Withdrawals | Every withdrawal needs a fresh second factor: the authenticator code, or an SMS code from `POST /withdrawals/code`. Backup codes are not accepted here. |
+| KYC tiers | 0 = registered (deposit only), 1 = phone verified, 2 = tazkira/passport + selfie approved by staff, 3 = merchant. Each tier has a rolling 24h limit for trade volume (checked for **both** sides of a trade) and withdrawals (`LIMIT_TIER*_MICRO`). Posting offers needs tier 1. |
+| KYC documents | `POST /kyc/submission` → upload `front`, `back` (optional), `selfie` as raw images (JPEG/PNG/WebP, magic bytes checked, ≤ 5 MB; the web app downsizes photos) → `POST /kyc/submission/:id/submit`. Files are AES-256-GCM encrypted in `KYC_DIR`; staff view them through `GET /admin/kyc/:id/files/:kind` only. |
+| Staff roles | `admin` (everything, incl. staff management), `finance` (deposits, withdrawals, hot wallet, audit log), `support` (disputes, users, KYC, alerts). With `REQUIRE_STAFF_2FA=1` (default) staff must have 2FA on. Nobody can review their own request or change their own role; role changes sign the user out. |
+| Alerts | Rules raise one open alert per user and rule: `pass_through` (deposit leaves again within 2h without trading), `shared_address` (withdrawal address used by another account), `large_trade`, `many_cancels`, `many_disputes`, `auth_failures`. Staff close them with a note; every staff decision is in the audit log. |
+| Data key | `DATA_ENCRYPTION_KEY` (required in production) encrypts TOTP secrets and KYC files and keys the code HMACs. Back it up: without it those records cannot be read. |
 
 ## Endpoints (`/api`)
 
-| Method | Path | Who | Body / query |
+| Method | Path | Who (admin routes: permission) | Body / query |
 |---|---|---|---|
 | GET | `/config` | public | – |
 | POST | `/auth/register` | public | `username, password, displayName?, phone?` |
 | POST | `/auth/login` | public | `username, password` |
+| POST | `/auth/login/2fa` | public | `challenge, code` |
 | POST | `/auth/logout` | user | – |
-| GET | `/me` | user | – |
+| GET | `/me` | user | profile, role/perms, phone and 2FA state, KYC tier/limits/usage |
+| GET | `/me/security` | user | phone, 2FA, backup codes left, recent security events |
+| POST | `/me/phone`, `/me/phone/verify` | user | `phone` / `code` |
+| POST | `/me/totp/setup`, `/me/totp/enable`, `/me/totp/disable`, `/me/totp/backup-codes` | user | – / `code` |
+| POST | `/me/password` | user | `current, next` |
+| GET | `/kyc` | user | tier, limits, 24h usage, latest submission |
+| POST | `/kyc/submission`, `/kyc/submission/:id/files/:kind`, `/kyc/submission/:id/submit` | user | details / raw image / – |
 | GET | `/wallet` | user | balances, ledger, deposits, withdrawals |
 | POST | `/deposits` | user | `amount, txid` (manual mode only) |
 | GET | `/deposit-address` | user | personal TRC20 address (chain mode) |
 | POST | `/deposit-address/check` | user | scan it now; returns `{credited}` |
-| POST | `/withdrawals` | user | `amount, address` (TRC20) |
+| POST | `/withdrawals/code` | user | sends an SMS code (users without 2FA) |
+| POST | `/withdrawals` | user | `amount, address` (TRC20), `code` |
 | GET | `/payment-accounts` | user | – |
 | POST | `/payment-accounts` | user | `method, holderName, account` (upsert per method) |
 | POST | `/payment-accounts/:id/delete` | owner | – |
@@ -71,8 +93,14 @@ Errors are `{"error": "<code>"}` with an HTTP status; the web app maps codes to 
 | GET | `/admin/chain` | admin | hot wallet and chain loop status |
 | GET | `/admin/actions` | admin | audit log |
 | POST | `/admin/trades/:id/resolve` | admin | `winner=buyer\|seller, note?` |
-| GET | `/admin/users` | admin | – |
-| POST | `/admin/users/:id/block` | admin | `blocked` |
+| GET | `/admin/users` | users | `q?` |
+| POST | `/admin/users/:id/block` | users | `blocked` |
+| POST | `/admin/users/:id/tier` | kyc | `tier` |
+| POST | `/admin/users/:id/role` | staff | `role=user\|support\|finance\|admin` |
+| GET | `/admin/kyc`, `/admin/kyc/:id/files/:kind` | kyc | `status?` |
+| POST | `/admin/kyc/:id/approve\|reject` | kyc | `tier` / `reason` |
+| GET | `/admin/alerts` | alerts | `status?` |
+| POST | `/admin/alerts/:id/close` | alerts | `note` |
 
 Payment method codes: `hesabpay, mpaisa, mhawala, bank, hawala, cash`.
 

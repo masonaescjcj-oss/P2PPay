@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Link } from 'react-router-dom'
 import Icon from '../components/Icon.jsx'
 import { Toast, TopBar } from '../components/Layout.jsx'
 import StatusList from '../components/StatusList.jsx'
@@ -10,8 +11,13 @@ import { usePrefs } from '../lib/prefs.jsx'
 
 export default function Withdraw() {
   const { t, errText } = usePrefs()
-  const { config } = useAuth()
+  const { config, user } = useAuth()
   const wallet = useApi('/wallet')
+  const kyc = useApi('/kyc')
+  const [code, setCode] = useState('')
+  const [codeSent, setCodeSent] = useState(false)
+  const canWithdraw = user.totpEnabled || user.phoneVerified
+  const left = kyc.data ? Math.max(0, toNum(kyc.data.limits.withdraw) - toNum(kyc.data.used.withdraw)) : null
   const [address, setAddress] = useState('')
   const [amount, setAmount] = useState('')
   const [busy, setBusy] = useState(false)
@@ -31,14 +37,27 @@ export default function Withdraw() {
     }
   }
 
+  async function sendCode() {
+    setError(null)
+    try {
+      await api.post('/withdrawals/code')
+      setCodeSent(true)
+    } catch (err) {
+      setError(errText(err))
+    }
+  }
+
   async function submit(e) {
     e.preventDefault()
     setBusy(true)
     setError(null)
     try {
-      await api.post('/withdrawals', { amount: amount.replace(/,/g, ''), address: address.trim() })
+      await api.post('/withdrawals', { amount: amount.replace(/,/g, ''), address: address.trim(), code: code.trim() })
       setAmount('')
       setAddress('')
+      setCode('')
+      setCodeSent(false)
+      kyc.reload()
       showToast(t('withdrawSubmitted'))
       wallet.reload()
     } catch (err) {
@@ -74,7 +93,10 @@ export default function Withdraw() {
             <span className="unit">USDT</span>
             <button type="button" className="chip square" style={{ height: 36 }} onClick={() => setAmount(String(maxSend))}>{t('max')}</button>
           </div>
-          <span className="hint">{t('minWithdraw', { v: config?.minWithdraw ?? '5' })}</span>
+          <span className="hint">
+            {t('minWithdraw', { v: config?.minWithdraw ?? '5' })}
+            {left !== null && <> · {t('remainingToday', { v: usdt(String(left)) })}</>}
+          </span>
         </div>
 
         <section className="card tight">
@@ -83,13 +105,33 @@ export default function Withdraw() {
           <div className="kv"><span style={{ color: 'var(--text-2)', fontWeight: 600 }}>{t('destReceives')}</span><span className="t-green" style={{ fontSize: 14, fontWeight: 800 }}><span className="num">{a ? usdt(String(a)) : '—'}</span> USDT</span></div>
         </section>
 
+        {canWithdraw ? (
+          <div className="field">
+            <label htmlFor="wcode" className="label">{user.totpEnabled ? t('authenticatorCode') : t('smsCode')}</label>
+            <div className="input-box sm" style={{ paddingInlineEnd: 6 }}>
+              <input id="wcode" dir="ltr" inputMode="numeric" autoComplete="one-time-code" value={code} onChange={(e) => setCode(e.target.value)} style={{ fontSize: 18, letterSpacing: 4, textAlign: 'center' }} />
+              {!user.totpEnabled && (
+                <button type="button" className="btn btn-secondary btn-sm" style={{ height: 40, background: 'var(--surface-2)', border: 0 }} onClick={sendCode}>
+                  {codeSent ? t('resend') : t('sendCode')}
+                </button>
+              )}
+            </div>
+            {codeSent && <span className="hint">{t('codeSentTo', { p: user.phone || '' })}</span>}
+          </div>
+        ) : (
+          <div className="note gold">
+            <Icon name="phone" size={20} />
+            <span>{t('withdrawNeedsVerify')} <Link to="/profile/verification">{t('goVerify')}</Link></span>
+          </div>
+        )}
+
         <div className="note green">
           <Icon name="shieldCheck" size={20} />
           <span>{t('withdrawNote')}</span>
         </div>
 
         {error && <p className="error-text" role="alert">{error}</p>}
-        <button type="submit" className="btn btn-primary" disabled={busy || !a || !address}>{t('confirmWithdraw')}</button>
+        <button type="submit" className="btn btn-primary" disabled={busy || !a || !address || !canWithdraw || code.trim().length < 6}>{t('confirmWithdraw')}</button>
       </form>
 
       <StatusList title={t('recentWithdrawals')} items={wallet.data?.withdrawals} showAddress />

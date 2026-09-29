@@ -23,6 +23,7 @@ export default function Offer() {
   const [method, setMethod] = useState(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
+  const [errCode, setErrCode] = useState(null)
 
   const o = offer.data
   const visitorBuys = o?.side === 'sell'
@@ -59,6 +60,7 @@ export default function Offer() {
       navigate(`/trades/${trade.id}`, { replace: true })
     } catch (err) {
       setError(errText(err))
+      setErrCode(err.code)
     } finally {
       setBusy(false)
     }
@@ -160,7 +162,11 @@ export default function Offer() {
         </div>
       )}
 
-      {error && <p className="error-text" role="alert">{error}</p>}
+      {error && (
+        <p className="error-text" role="alert">
+          {error} {/limit|kyc|counterparty/.test(errCode || '') && <Link to="/profile/verification">{t('goVerify')}</Link>}
+        </p>
+      )}
 
       <div className="push-end">
         <button type="button" className={`btn ${visitorBuys ? 'btn-buy' : 'btn-sell'}`} disabled={busy || (user && (!calc || outOfRange || needsAccount))} onClick={submit}>

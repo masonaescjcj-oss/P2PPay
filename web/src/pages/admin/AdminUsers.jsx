@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useOutletContext } from 'react-router-dom'
 import { Empty, Loading } from '../../components/Layout.jsx'
 import { api } from '../../lib/api.js'
 import { useAuth } from '../../lib/auth.jsx'
@@ -9,6 +10,7 @@ import { usePrefs } from '../../lib/prefs.jsx'
 export default function AdminUsers() {
   const { t, errText } = usePrefs()
   const { user: me } = useAuth()
+  const { perms } = useOutletContext()
   const [q, setQ] = useState('')
   const [query, setQuery] = useState('')
   const [error, setError] = useState(null)
@@ -17,6 +19,16 @@ export default function AdminUsers() {
     return () => clearTimeout(id)
   }, [q])
   const list = useApi(`/admin/users?q=${encodeURIComponent(query)}`)
+
+  async function set(path, body) {
+    setError(null)
+    try {
+      await api.post(path, body)
+      list.reload()
+    } catch (err) {
+      setError(errText(err))
+    }
+  }
 
   async function toggle(u) {
     setError(null)
@@ -46,7 +58,13 @@ export default function AdminUsers() {
               <div className="row">
                 <div className="avatar">{initial(u.displayName)}</div>
                 <div className="grow stack" style={{ gap: 2 }}>
-                  <strong>{u.displayName} {u.role === 'admin' && <span className="pill gold">{t('admin')}</span>} {u.blocked && <span className="pill coral">{t('blocked')}</span>}</strong>
+                  <strong className="row" style={{ gap: 6, flexWrap: 'wrap' }}>
+                    {u.displayName}
+                    {u.role !== 'user' && <span className="pill gold">{t(`role_${u.role}`)}</span>}
+                    <span className="pill neutral">{t('tier', { n: u.kycTier })}</span>
+                    {u.totpEnabled && <span className="pill green">2FA</span>}
+                    {u.blocked && <span className="pill coral">{t('blocked')}</span>}
+                  </strong>
                   <span className="caption" dir="ltr" style={{ textAlign: 'start' }}>@{u.username}{u.phone ? ` · ${u.phone}` : ''}</span>
                 </div>
               </div>
@@ -55,9 +73,29 @@ export default function AdminUsers() {
                 <div className="stat"><span>{t('inEscrow')}</span><span className="num">{usdt(u.locked)}</span></div>
                 <div className="stat"><span>{t('memberTrades')}</span><span className="num">{u.completed}{u.completionRate != null ? ` · ${u.completionRate}%` : ''}</span></div>
               </div>
+              {u.id !== me.id && (perms.includes('kyc') || perms.includes('staff')) && (
+                <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
+                  {perms.includes('kyc') && (
+                    <label className="input-box sm grow" style={{ minHeight: 40 }}>
+                      <span className="caption">{t('setTier')}</span>
+                      <select value={u.kycTier} onChange={(e) => set(`/admin/users/${u.id}/tier`, { tier: Number(e.target.value) })} style={{ height: 38, fontSize: 13 }}>
+                        {[0, 1, 2, 3].map((n) => <option key={n} value={n}>{t('tier', { n })}</option>)}
+                      </select>
+                    </label>
+                  )}
+                  {perms.includes('staff') && (
+                    <label className="input-box sm grow" style={{ minHeight: 40 }}>
+                      <span className="caption">{t('setRole')}</span>
+                      <select value={u.role} onChange={(e) => set(`/admin/users/${u.id}/role`, { role: e.target.value })} style={{ height: 38, fontSize: 13 }}>
+                        {['user', 'support', 'finance', 'admin'].map((r) => <option key={r} value={r}>{t(`role_${r}`)}</option>)}
+                      </select>
+                    </label>
+                  )}
+                </div>
+              )}
               <div className="between">
                 <span className="caption">{t('joined')}: <span className="num">{new Date(u.createdAt).toISOString().slice(0, 10)}</span></span>
-                {u.id !== me.id && u.role !== 'admin' && (
+                {u.id !== me.id && u.role === 'user' && (
                   <button type="button" className={`btn btn-sm ${u.blocked ? 'btn-secondary' : 'btn-danger'}`} style={{ height: 36 }} onClick={() => toggle(u)}>
                     {u.blocked ? t('unblock') : t('block')}
                   </button>

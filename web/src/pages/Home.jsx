@@ -90,6 +90,14 @@ export default function Home() {
           </Link>
         </div>
 
+        {(user.kycTier ?? 0) < 1 && (
+          <Link to="/profile/verification" className="note gold" style={{ alignItems: 'center' }}>
+            <Icon name="shieldCheck" size={20} />
+            <span className="grow">{t('verifyToTrade')}</span>
+            <span className="strong t-gold">{t('goVerify')}</span>
+          </Link>
+        )}
+
         <BalanceCard wallet={wallet.data} afnPrice={toNum(bestBuy) || null} />
 
         <nav className="grid-4" aria-label={t('wallet')}>

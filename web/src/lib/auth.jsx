@@ -21,8 +21,16 @@ export function AuthProvider({ children }) {
     api.get('/config').then(setConfig, () => {})
   }, [refresh])
 
+  // Returns { challenge } when the account has 2FA; finish with loginSecondFactor.
   const login = useCallback(async (username, password) => {
-    await api.post('/auth/login', { username, password })
+    const r = await api.post('/auth/login', { username, password })
+    if (r.twoFactor) return { challenge: r.challenge }
+    await refresh()
+    return {}
+  }, [refresh])
+
+  const loginSecondFactor = useCallback(async (challenge, code) => {
+    await api.post('/auth/login/2fa', { challenge, code })
     await refresh()
   }, [refresh])
 
@@ -39,7 +47,7 @@ export function AuthProvider({ children }) {
     }
   }, [])
 
-  const value = useMemo(() => ({ user, config, refresh, login, register, logout }), [user, config, refresh, login, register, logout])
+  const value = useMemo(() => ({ user, config, refresh, login, loginSecondFactor, register, logout }), [user, config, refresh, login, loginSecondFactor, register, logout])
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }
 

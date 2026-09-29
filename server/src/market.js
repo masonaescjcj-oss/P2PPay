@@ -6,7 +6,9 @@ const m = require('./money');
 const MAX_OPEN_TRADES = 5;
 const OPEN = ['pending_payment', 'paid', 'disputed'];
 
-function createMarket(db, wallet, config) {
+// hooks (all optional): assertCanPostOffer(userId), assertTrade({actorId, buyerId, sellerId, amount}),
+// onTradeOpened(trade), onBuyerCancelled(trade), onDispute(trade, userId)
+function createMarket(db, wallet, config, hooks = {}) {
   const now = () => Date.now();
   const getOffer = db.prepare('SELECT * FROM offers WHERE id = ?');
   const getTrade = db.prepare('SELECT * FROM trades WHERE id = ?');
@@ -86,6 +88,7 @@ function createMarket(db, wallet, config) {
 
   // ---------- offers ----------
   function createOffer(userId, input) {
+    hooks.assertCanPostOffer?.(userId);
     const side = input.side;
     if (side !== 'buy' && side !== 'sell') throw bad('invalid_side');
     const price = m.parseAfn(input.price);
@@ -208,6 +211,7 @@ function createMarket(db, wallet, config) {
 
       const buyerId = o.side === 'sell' ? takerId : o.user_id;
       const sellerId = o.side === 'sell' ? o.user_id : takerId;
+      hooks.assertTrade?.({ actorId: takerId, buyerId, sellerId, amount });
       const fee = m.feeFor(amount, config.tradeFeeBps);
       const t = now();
       const { lastInsertRowid } = db
@@ -224,6 +228,7 @@ function createMarket(db, wallet, config) {
       // For a buy offer the taker is the seller: lock their USDT now.
       if (o.side === 'buy') wallet.lock(sellerId, amount, 'trade_lock', { type: 'trade', id });
       sys(id, 'trade_opened');
+      hooks.onTradeOpened?.(getTrade.get(id));
       return tradeView(getTrade.get(id), takerId);
     });
   }
@@ -293,6 +298,7 @@ function createMarket(db, wallet, config) {
           if (!isBuyer) throw forbidden();
           if (t.status !== 'pending_payment' && t.status !== 'paid') throw conflict('invalid_state');
           close(t, 'cancelled', 'cancelled_by_buyer');
+          hooks.onBuyerCancelled?.(t);
           break;
         case 'dispute': {
           if (t.status !== 'paid') throw conflict('invalid_state');
@@ -300,6 +306,7 @@ function createMarket(db, wallet, config) {
           if (!reason) throw bad('reason_required');
           db.prepare("UPDATE trades SET status = 'disputed', dispute_reason = ? WHERE id = ?").run(reason, t.id);
           sys(t.id, 'trade_disputed');
+          hooks.onDispute?.(t, userId);
           break;
         }
         default:
@@ -352,7 +359,7 @@ function createMarket(db, wallet, config) {
     if (!isAdmin) loadForParty(userId, tradeId);
     return db
       .prepare(
-        `SELECT m.id, m.user_id AS userId, u.username, u.role = 'admin' AS fromAdmin, m.body, m.created_at AS createdAt
+        `SELECT m.id, m.user_id AS userId, u.username, u.role != 'user' AS fromAdmin, m.body, m.created_at AS createdAt
          FROM trade_messages m LEFT JOIN users u ON u.id = m.user_id
          WHERE m.trade_id = ? AND m.id > ? ORDER BY m.id LIMIT 500`
       )

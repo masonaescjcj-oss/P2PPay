@@ -8,8 +8,9 @@ const TXID = /^(0x)?[0-9a-fA-F]{64}$/;
 
 // Deposits and withdrawals are reviewed by an admin, who checks the Tron chain
 // (e.g. on tronscan.org) before approving. Hook an on-chain watcher in here later.
-// isBlockedAddress: optional predicate for addresses users may not withdraw to (the platform's own wallets).
-function createFunds(db, wallet, config, { isBlockedAddress } = {}) {
+// isBlockedAddress: addresses users may not withdraw to (the platform's own wallets).
+// beforeWithdraw(userId, amount): throws when limits forbid it; onWithdrawal(userId, amount, address): after.
+function createFunds(db, wallet, config, { isBlockedAddress, beforeWithdraw, onWithdrawal } = {}) {
   const now = () => Date.now();
 
   const depView = (d) => ({
@@ -53,19 +54,27 @@ function createFunds(db, wallet, config, { isBlockedAddress } = {}) {
     });
   }
 
-  function requestWithdrawal(userId, input) {
+  // Input checks only (no balance or limits), so bad input is reported before a security code is spent.
+  function validateWithdrawal(input) {
     const amount = m.parseUsdt(input.amount);
     if (!amount) throw bad('invalid_amount');
     if (amount < config.minWithdrawMicro) throw bad('below_minimum');
     const address = String(input.address ?? '').trim();
     if (!isAddress(address) || (isBlockedAddress && isBlockedAddress(address))) throw bad('invalid_address');
+    return { amount, address };
+  }
+
+  function requestWithdrawal(userId, input) {
+    const { amount, address } = validateWithdrawal(input);
     const fee = config.withdrawFeeMicro;
     return db.tx(() => {
+      beforeWithdraw?.(userId, amount);
       const { lastInsertRowid } = db
         .prepare('INSERT INTO withdrawals (user_id, amount, fee, network, address, created_at) VALUES (?, ?, ?, ?, ?, ?)')
         .run(userId, amount, fee, config.network, address, now());
       const id = Number(lastInsertRowid);
       wallet.lock(userId, amount + fee, 'withdraw_lock', { type: 'withdrawal', id });
+      onWithdrawal?.(userId, amount, address);
       return wdView(db.prepare('SELECT * FROM withdrawals WHERE id = ?').get(id));
     });
   }
@@ -104,7 +113,7 @@ function createFunds(db, wallet, config, { isBlockedAddress } = {}) {
       .map(view);
 
   return {
-    requestDeposit, reviewDeposit, requestWithdrawal, reviewWithdrawal,
+    requestDeposit, reviewDeposit, validateWithdrawal, requestWithdrawal, reviewWithdrawal,
     myDeposits: listFor('deposits', depView),
     myWithdrawals: listFor('withdrawals', wdView),
     allDeposits: listAll('deposits', depView),

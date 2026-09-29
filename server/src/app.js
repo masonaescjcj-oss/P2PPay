@@ -9,24 +9,46 @@ const { createMarket } = require('./market');
 const { createFunds } = require('./funds');
 const { createChain } = require('./chain');
 const { createTronClient } = require('./tron/client');
-const { hashPassword, verifyPassword, createAuth, rateLimit } = require('./auth');
-const { ApiError, bad, conflict, forbidden, notFound } = require('./errors');
+const { hashPassword, createAuth, rateLimit } = require('./auth');
+const { ApiError, bad, notFound } = require('./errors');
+const { createSecretBox, loadDataKey } = require('./security/secretbox');
+const { createSmsSender } = require('./security/sms');
+const { createSecurity } = require('./security/service');
+const { createKyc } = require('./kyc');
+const { createAlerts } = require('./alerts');
+const { accountRoutes } = require('./routes/account');
+const { adminRoutes } = require('./routes/admin');
 const m = require('./money');
 
-// deps.tronClient lets tests replace TronGrid with a fake chain.
+// deps: tronClient (fake chain), sms (fake SMS sender), log — for tests.
 function createApp(config, deps = {}) {
+  const log = deps.log || console;
   const db = open(config.dbPath);
   const wallet = createWallet(db);
-  const market = createMarket(db, wallet, config);
+  const box = createSecretBox(loadDataKey(config, log));
+  const alerts = createAlerts(db, config);
+  const kyc = createKyc(db, config, { box });
+  const market = createMarket(db, wallet, config, {
+    assertCanPostOffer: kyc.assertCanPostOffer,
+    assertTrade: kyc.assertTrade,
+    onTradeOpened: alerts.onTradeOpened,
+    onBuyerCancelled: alerts.onBuyerCancelled,
+    onDispute: alerts.onDispute,
+  });
   const chainOn = config.tron && config.tron.network !== 'off';
   const chain = chainOn
     ? createChain(db, wallet, config, {
       client: deps.tronClient || createTronClient({ apiUrl: config.tron.apiUrl, apiKey: config.tron.apiKey }),
-      log: deps.log || console,
+      log,
     })
     : null;
-  const funds = createFunds(db, wallet, config, { isBlockedAddress: chain ? chain.isPlatformAddress : null });
+  const funds = createFunds(db, wallet, config, {
+    isBlockedAddress: chain ? chain.isPlatformAddress : null,
+    beforeWithdraw: kyc.assertWithdraw,
+    onWithdrawal: alerts.onWithdrawalRequested,
+  });
   const auth = createAuth(db, config);
+  const security = createSecurity(db, config, { box, sms: deps.sms || createSmsSender(config, { log }), alerts, log });
 
   seedAdmin(db, config);
 
@@ -37,6 +59,8 @@ function createApp(config, deps = {}) {
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('X-Frame-Options', 'DENY');
     res.setHeader('Referrer-Policy', 'same-origin');
+    res.setHeader('Permissions-Policy', 'camera=(self), geolocation=(), microphone=()');
+    if (config.cookieSecure) res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
     res.setHeader(
       'Content-Security-Policy',
       "default-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data: blob:"
@@ -50,22 +74,24 @@ function createApp(config, deps = {}) {
 
   const api = express.Router();
   api.use(express.json({ limit: '32kb' }));
-  // CSRF: state-changing requests must be JSON (cannot be sent cross-site by a plain form),
-  // on top of SameSite=Strict session cookies.
+  // CSRF: state-changing requests must be JSON (cannot be sent cross-site by a plain form), or an image
+  // upload carrying a custom header (which a cross-site form cannot set) — on top of SameSite=Strict cookies.
   api.use((req, _res, next) => {
-    if (req.method !== 'GET' && !req.is('application/json')) return next(bad('json_required'));
-    next();
+    if (req.method === 'GET' || req.is('application/json')) return next();
+    if (/^\/kyc\/submission\/\d+\/files\//.test(req.path) && req.get('x-p2ppay-upload') === '1' && req.is('image/*')) return next();
+    next(bad('json_required'));
   });
   api.use(auth.session);
 
   const u = auth.requireUser;
-  const admin = auth.requireAdmin;
   const id = (req) => {
     const n = Number.parseInt(req.params.id, 10);
     if (!(n > 0)) throw notFound();
     return n;
   };
-  const isAdmin = (req) => req.user?.role === 'admin';
+  // Staff with the disputes permission (and 2FA when required) may read and join any trade's chat.
+  const isStaff = (req) =>
+    !!req.user?.perms.includes('disputes') && (!config.requireStaff2fa || req.user.totpEnabled);
 
   // ---------- public ----------
   api.get('/config', (_req, res) => {
@@ -80,48 +106,12 @@ function createApp(config, deps = {}) {
       withdrawFee: m.fmtUsdt(config.withdrawFeeMicro),
       minWithdraw: m.fmtUsdt(config.minWithdrawMicro),
       paymentMethods: config.paymentMethods,
+      kycLimits: Object.fromEntries(Object.entries(config.kycLimits).map(([k, v]) => [k, { trade: m.fmtUsdt(v.trade), withdraw: m.fmtUsdt(v.withdraw) }])),
     });
   });
 
-  // ---------- auth ----------
-  const authLimit = rateLimit({ windowMs: 15 * 60_000, max: 20 });
-
-  api.post('/auth/register', authLimit, (req, res) => {
-    const username = String(req.body.username ?? '').trim();
-    const password = String(req.body.password ?? '');
-    const displayName = String(req.body.displayName ?? '').trim().slice(0, 40) || username;
-    const phone = String(req.body.phone ?? '').trim().slice(0, 20) || null;
-    if (!/^[a-zA-Z0-9_]{3,24}$/.test(username)) throw bad('invalid_username');
-    if (password.length < 8 || password.length > 200) throw bad('weak_password');
-    if (phone && !/^\+?[0-9 ]{7,20}$/.test(phone)) throw bad('invalid_phone');
-    if (db.prepare('SELECT 1 FROM users WHERE username = ?').get(username)) throw conflict('username_taken');
-    const { lastInsertRowid } = db
-      .prepare(
-        'INSERT INTO users (username, phone, display_name, password_hash, created_at) VALUES (?, ?, ?, ?, ?)'
-      )
-      .run(username, phone, displayName, hashPassword(password), Date.now());
-    auth.login(res, Number(lastInsertRowid));
-    res.status(201).json({ id: Number(lastInsertRowid), username, displayName, role: 'user' });
-  });
-
-  api.post('/auth/login', authLimit, (req, res) => {
-    const username = String(req.body.username ?? '').trim();
-    const user = db.prepare('SELECT * FROM users WHERE username = ?').get(username);
-    if (!user || !verifyPassword(String(req.body.password ?? ''), user.password_hash))
-      throw new ApiError(401, 'invalid_credentials');
-    if (user.is_blocked) throw new ApiError(403, 'account_blocked');
-    auth.login(res, user.id);
-    res.json({ id: user.id, username: user.username, displayName: user.display_name, role: user.role });
-  });
-
-  api.post('/auth/logout', (req, res) => {
-    auth.logout(req, res);
-    res.json({ ok: true });
-  });
-
-  api.get('/me', u, (req, res) => {
-    res.json({ ...req.user, ...market.stats(req.user.id) });
-  });
+  const ctx = { db, config, wallet, market, funds, chain, chainOn, auth, security, kyc, alerts, u, id };
+  accountRoutes(api, ctx);
 
   // ---------- wallet ----------
   api.get('/wallet', u, (req, res) => {
@@ -152,7 +142,18 @@ function createApp(config, deps = {}) {
     chain.depositAddress(req.user.id);
     res.json({ credited: await chain.scanUser(req.user.id) });
   });
-  api.post('/withdrawals', u, (req, res) => res.status(201).json(funds.requestWithdrawal(req.user.id, req.body)));
+  // Withdrawals need a fresh second factor: authenticator code, or an SMS code sent here first.
+  api.post('/withdrawals/code', u, rateLimit({ windowMs: 15 * 60_000, max: 10 }), async (req, res) => {
+    await security.sendWithdrawalCode(req.user.id, req);
+    res.json({ ok: true });
+  });
+  api.post('/withdrawals', u, (req, res) => {
+    funds.validateWithdrawal(req.body);
+    security.checkWithdrawalCode(req.user.id, req.body.code, req);
+    const w = funds.requestWithdrawal(req.user.id, req.body);
+    security.event(req.user.id, 'withdrawal_requested', req);
+    res.status(201).json(w);
+  });
 
   // ---------- payment accounts ----------
   const accountView = (a) => ({ id: a.id, method: a.method, holderName: a.holder_name, account: a.account });
@@ -186,7 +187,7 @@ function createApp(config, deps = {}) {
   api.get('/offers/:id', (req, res) => res.json(market.offer(id(req))));
   api.post('/offers', u, (req, res) => res.status(201).json(market.createOffer(req.user.id, req.body)));
   api.post('/offers/:id/status', u, (req, res) =>
-    res.json(market.setOfferStatus(req.user.id, id(req), req.body.status, isAdmin(req)))
+    res.json(market.setOfferStatus(req.user.id, id(req), req.body.status, isStaff(req)))
   );
   api.post('/offers/:id/trades', u, (req, res) =>
     res.status(201).json(market.openTrade(req.user.id, id(req), req.body))
@@ -194,125 +195,18 @@ function createApp(config, deps = {}) {
 
   // ---------- trades ----------
   api.get('/trades', u, (req, res) => res.json(market.myTrades(req.user.id)));
-  api.get('/trades/:id', u, (req, res) => res.json(market.trade(req.user.id, id(req), isAdmin(req))));
+  api.get('/trades/:id', u, (req, res) => res.json(market.trade(req.user.id, id(req), isStaff(req))));
   for (const action of ['pay', 'release', 'cancel', 'dispute']) {
     api.post(`/trades/:id/${action}`, u, (req, res) => res.json(market.action(req.user.id, id(req), action, req.body)));
   }
   api.get('/trades/:id/messages', u, (req, res) =>
-    res.json(market.messages(req.user.id, id(req), Number(req.query.after) || 0, isAdmin(req)))
+    res.json(market.messages(req.user.id, id(req), Number(req.query.after) || 0, isStaff(req)))
   );
   api.post('/trades/:id/messages', u, rateLimit({ windowMs: 60_000, max: 30 }), (req, res) =>
-    res.status(201).json(market.postMessage(req.user.id, id(req), req.body.body, isAdmin(req)))
+    res.status(201).json(market.postMessage(req.user.id, id(req), req.body.body, isStaff(req)))
   );
 
-  // ---------- admin ----------
-  api.get('/admin/overview', admin, (_req, res) => {
-    const sum = db.prepare('SELECT COALESCE(SUM(available),0) a, COALESCE(SUM(locked),0) l FROM balances').get();
-    const fees = db.prepare("SELECT COALESCE(SUM(available_delta),0) f FROM ledger WHERE kind = 'fee'").get().f;
-    const count = (sql) => db.prepare(sql).get().n;
-    res.json({
-      users: count('SELECT COUNT(*) n FROM users'),
-      pendingDeposits: count("SELECT COUNT(*) n FROM deposits WHERE status = 'pending'"),
-      pendingWithdrawals: count("SELECT COUNT(*) n FROM withdrawals WHERE status = 'pending'"),
-      disputes: count("SELECT COUNT(*) n FROM trades WHERE status = 'disputed'"),
-      openTrades: count("SELECT COUNT(*) n FROM trades WHERE status IN ('pending_payment','paid','disputed')"),
-      userBalances: m.fmtUsdt(sum.a + sum.l),
-      fees: m.fmtUsdt(fees),
-    });
-  });
-  // Runs an admin decision and records it in the audit log in the same transaction.
-  const insertAction = db.prepare(
-    'INSERT INTO admin_actions (admin_id, action, target_type, target_id, note, created_at) VALUES (?, ?, ?, ?, ?, ?)'
-  );
-  const audited = (req, action, type, targetId, fn) =>
-    db.tx(() => {
-      const out = fn();
-      const note = req.body?.note ? String(req.body.note).slice(0, 500) : null;
-      insertAction.run(req.user.id, action, type, targetId, note, Date.now());
-      return out;
-    });
-
-  api.get('/admin/deposits', admin, (req, res) => res.json(funds.allDeposits(req.query.status || null)));
-  api.get('/admin/withdrawals', admin, (req, res) => res.json(funds.allWithdrawals(req.query.status || null)));
-  for (const decision of ['approve', 'reject']) {
-    api.post(`/admin/deposits/:id/${decision}`, admin, (req, res) => {
-      const did = id(req);
-      res.json(audited(req, `deposit_${decision}`, 'deposit', did, () =>
-        funds.reviewDeposit(did, decision === 'approve', req.body, req.user.id)));
-    });
-    api.post(`/admin/withdrawals/:id/${decision}`, admin, async (req, res) => {
-      const wid = id(req);
-      // A failed on-chain attempt must be provably dead before it is refunded or settled by hand.
-      if (chain) await chain.assertSettledFailure(wid);
-      res.json(audited(req, `withdrawal_${decision}`, 'withdrawal', wid, () =>
-        funds.reviewWithdrawal(wid, decision === 'approve', req.body, req.user.id)));
-    });
-  }
-  // Chain mode: hot wallet status, and sending a withdrawal (or retrying a failed one) from the hot wallet.
-  api.get('/admin/chain', admin, async (_req, res) => {
-    if (!chainOn) return res.json({ network: 'off' });
-    res.json(await chain.status());
-  });
-  api.post('/admin/withdrawals/:id/send', admin, async (req, res) => {
-    if (!chainOn) throw bad('chain_off');
-    const wid = id(req);
-    const w = db.prepare('SELECT user_id FROM withdrawals WHERE id = ?').get(wid);
-    if (!w) throw notFound();
-    if (w.user_id === req.user.id) throw forbidden('own_request');
-    const out = await chain.sendWithdrawal(wid);
-    insertAction.run(req.user.id, 'withdrawal_send', 'withdrawal', wid, req.body?.note ? String(req.body.note).slice(0, 500) : null, Date.now());
-    res.json(out);
-  });
-  api.get('/admin/trades', admin, (req, res) => res.json(market.listTrades(req.query.status || null)));
-  api.post('/admin/trades/:id/resolve', admin, (req, res) => {
-    const tid = id(req);
-    res.json(audited(req, `resolve_${req.body.winner}`, 'trade', tid, () =>
-      market.resolveDispute(tid, req.body.winner, req.body.note, req.user.id)));
-  });
-
-  const userView = (r) => ({
-    id: r.id, username: r.username, displayName: r.display_name, phone: r.phone, role: r.role,
-    blocked: !!r.is_blocked, createdAt: r.created_at, available: m.fmtUsdt(r.available), locked: m.fmtUsdt(r.locked),
-    ...market.stats(r.id),
-  });
-  api.get('/admin/users', admin, (req, res) => {
-    const q = String(req.query.q ?? '').trim();
-    const like = `%${q.replace(/[\\%_]/g, (c) => '\\' + c)}%`;
-    const rows = db
-      .prepare(
-        `SELECT u.id, u.username, u.display_name, u.phone, u.role, u.is_blocked, u.created_at,
-           COALESCE(b.available,0) available, COALESCE(b.locked,0) locked
-         FROM users u LEFT JOIN balances b ON b.user_id = u.id
-         WHERE ? = '' OR u.username LIKE ? ESCAPE '\\' OR u.display_name LIKE ? ESCAPE '\\' OR u.phone LIKE ? ESCAPE '\\'
-         ORDER BY u.id DESC LIMIT 200`
-      )
-      .all(q, like, like, like);
-    res.json(rows.map(userView));
-  });
-  api.post('/admin/users/:id/block', admin, (req, res) => {
-    const uid = id(req);
-    if (uid === req.user.id) throw bad('cannot_block_self');
-    const target = db.prepare('SELECT role FROM users WHERE id = ?').get(uid);
-    if (!target) throw notFound();
-    if (target.role === 'admin') throw forbidden('cannot_block_admin');
-    audited(req, req.body.blocked ? 'user_block' : 'user_unblock', 'user', uid, () => {
-      db.prepare('UPDATE users SET is_blocked = ? WHERE id = ?').run(req.body.blocked ? 1 : 0, uid);
-      if (req.body.blocked) db.prepare('DELETE FROM sessions WHERE user_id = ?').run(uid);
-    });
-    res.json({ ok: true });
-  });
-  api.get('/admin/actions', admin, (_req, res) => {
-    const rows = db
-      .prepare(
-        `SELECT a.*, u.username AS admin_username FROM admin_actions a JOIN users u ON u.id = a.admin_id
-         ORDER BY a.id DESC LIMIT 200`
-      )
-      .all();
-    res.json(rows.map((r) => ({
-      id: r.id, admin: r.admin_username, action: r.action, targetType: r.target_type, targetId: r.target_id,
-      note: r.note, createdAt: r.created_at,
-    })));
-  });
+  adminRoutes(api, ctx);
 
   api.use((_req, _res, next) => next(notFound()));
   // eslint-disable-next-line no-unused-vars

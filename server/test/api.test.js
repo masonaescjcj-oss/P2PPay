@@ -198,11 +198,11 @@ test('withdrawal: lock, reject refunds, approve burns', async (t) => {
   t.after(s.close);
   const c = await s.user('wd5');
   await s.fund(c, '20', 5);
-  assert.equal((await c.post('/withdrawals', { amount: '10', address: 'bad' })).data.error, 'invalid_address');
-  assert.equal((await c.post('/withdrawals', { amount: '1', address: ADDR })).data.error, 'below_minimum');
-  assert.equal((await c.post('/withdrawals', { amount: '20', address: ADDR })).data.error, 'insufficient_balance');
+  assert.equal((await s.withdraw(c, { amount: '10', address: 'bad' })).data.error, 'invalid_address');
+  assert.equal((await s.withdraw(c, { amount: '1', address: ADDR })).data.error, 'below_minimum');
+  assert.equal((await s.withdraw(c, { amount: '20', address: ADDR })).data.error, 'insufficient_balance');
 
-  const w1 = await c.post('/withdrawals', { amount: '10', address: ADDR });
+  const w1 = await s.withdraw(c, { amount: '10', address: ADDR });
   assert.equal(w1.status, 201);
   let b = await s.balance(c);
   assert.equal(b.available, '9');
@@ -211,7 +211,7 @@ test('withdrawal: lock, reject refunds, approve burns', async (t) => {
   assert.equal((await s.balance(c)).available, '20');
   assert.equal((await s.admin.post(`/admin/withdrawals/${w1.data.id}/reject`, {})).data.error, 'already_reviewed');
 
-  const w2 = await c.post('/withdrawals', { amount: '10', address: ADDR });
+  const w2 = await s.withdraw(c, { amount: '10', address: ADDR });
   assert.equal((await s.admin.post(`/admin/withdrawals/${w2.data.id}/approve`, {})).data.error, 'invalid_txid');
   await s.admin.post(`/admin/withdrawals/${w2.data.id}/approve`, { txid: TXID(99) });
   b = await s.balance(c);

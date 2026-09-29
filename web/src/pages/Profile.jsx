@@ -45,7 +45,7 @@ export default function Profile() {
           <div className="grow stack" style={{ gap: 4 }}>
             <strong style={{ fontSize: 18 }}>{user.displayName}</strong>
             <span dir="ltr" className="caption" style={{ textAlign: 'start' }}>@{user.username}</span>
-            {stats.completed >= 10 && (
+            {(user.kycTier ?? 0) >= 2 && (
               <span className="pill green" style={{ alignSelf: 'flex-start', height: 24 }}><Icon name="check" size={12} stroke={2.4} />{t('verified')}</span>
             )}
           </div>
@@ -57,7 +57,7 @@ export default function Profile() {
           <div className="stat card" style={{ padding: 12 }}><span>{t('myPaymentAccounts')}</span><span className="num" style={{ fontSize: 18 }}>{accounts.data?.length ?? 0}</span></div>
         </div>
 
-        {user.role === 'admin' && (
+        {user.perms?.length > 0 && (
           <Link to="/admin" className="btn btn-secondary" style={{ color: 'var(--gold-text)' }}>
             <Icon name="settings" size={18} />
             {t('adminPanel')}
@@ -65,6 +65,7 @@ export default function Profile() {
         )}
 
         <section className="card flush">
+          <Row icon="user" tone="green" label={t('verificationTitle')} value={`${t('tier', { n: user.kycTier ?? 0 })} · ${t(`tierName${user.kycTier ?? 0}`)}`} to="/profile/verification" />
           <Row icon="grid" tone="gold" label={t('myOffers')} to="/orders?tab=offers" />
           <Row icon="card" tone="blue" label={t('myPaymentAccounts')} value={accounts.data?.map((a) => pm(a.method)).join('، ')} to="/profile/accounts" />
         </section>
@@ -82,7 +83,7 @@ export default function Profile() {
               <button type="button" aria-pressed={lang === 'en'} onClick={() => setLang('en')}>English</button>
             </span>
           </Row>
-          <Row icon="shieldCheck" tone="green" label={t('security')} value={t('soon')} />
+          <Row icon="shieldCheck" tone="green" label={t('securityTitle')} value={user.totpEnabled ? '2FA ✓' : undefined} to="/profile/security" />
           <Row icon="headset" label={t('support')} value={t('soon')} />
         </section>
 

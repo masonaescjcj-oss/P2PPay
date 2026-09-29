@@ -219,6 +219,117 @@ const MIGRATIONS = [
       CREATE INDEX sweeps_status ON sweeps(status);
     `);
   },
+  // 3: security & compliance — staff roles, KYC tiers, phone/TOTP verification, alerts, security events
+  (db) => {
+    db.exec(`
+      CREATE TABLE users_new (
+        id INTEGER PRIMARY KEY,
+        username TEXT NOT NULL UNIQUE COLLATE NOCASE,
+        phone TEXT,
+        phone_verified_at INTEGER,
+        display_name TEXT NOT NULL,
+        password_hash TEXT NOT NULL,
+        password_changed_at INTEGER,
+        role TEXT NOT NULL DEFAULT 'user' CHECK (role IN ('user','admin','finance','support')),
+        is_blocked INTEGER NOT NULL DEFAULT 0,
+        kyc_tier INTEGER NOT NULL DEFAULT 0 CHECK (kyc_tier BETWEEN 0 AND 3),
+        totp_secret TEXT,
+        totp_pending TEXT,
+        totp_enabled_at INTEGER,
+        totp_last_step INTEGER NOT NULL DEFAULT 0,
+        failed_logins INTEGER NOT NULL DEFAULT 0,
+        locked_until INTEGER NOT NULL DEFAULT 0,
+        created_at INTEGER NOT NULL
+      );
+      INSERT INTO users_new (id, username, phone, display_name, password_hash, role, is_blocked, created_at)
+        SELECT id, username, phone, display_name, password_hash, role, is_blocked, created_at FROM users;
+      DROP TABLE users;
+      ALTER TABLE users_new RENAME TO users;
+      -- one verified phone number per account (limits multi-accounting)
+      CREATE UNIQUE INDEX users_verified_phone ON users(phone) WHERE phone_verified_at IS NOT NULL;
+
+      CREATE TABLE otp_codes (
+        id INTEGER PRIMARY KEY,
+        user_id INTEGER NOT NULL REFERENCES users(id),
+        purpose TEXT NOT NULL,
+        target TEXT,
+        code_hash TEXT NOT NULL,
+        attempts INTEGER NOT NULL DEFAULT 0,
+        expires_at INTEGER NOT NULL,
+        used_at INTEGER,
+        created_at INTEGER NOT NULL
+      );
+      CREATE INDEX otp_user ON otp_codes(user_id, purpose, id);
+
+      CREATE TABLE backup_codes (
+        id INTEGER PRIMARY KEY,
+        user_id INTEGER NOT NULL REFERENCES users(id),
+        code_hash TEXT NOT NULL,
+        used_at INTEGER
+      );
+      CREATE INDEX backup_user ON backup_codes(user_id);
+
+      CREATE TABLE login_challenges (
+        token_hash TEXT PRIMARY KEY,
+        user_id INTEGER NOT NULL REFERENCES users(id),
+        attempts INTEGER NOT NULL DEFAULT 0,
+        expires_at INTEGER NOT NULL
+      );
+
+      CREATE TABLE security_events (
+        id INTEGER PRIMARY KEY,
+        user_id INTEGER NOT NULL REFERENCES users(id),
+        kind TEXT NOT NULL,
+        ip TEXT,
+        user_agent TEXT,
+        created_at INTEGER NOT NULL
+      );
+      CREATE INDEX security_events_user ON security_events(user_id, id);
+
+      CREATE TABLE kyc_submissions (
+        id INTEGER PRIMARY KEY,
+        user_id INTEGER NOT NULL REFERENCES users(id),
+        doc_type TEXT NOT NULL CHECK (doc_type IN ('tazkira','passport')),
+        full_name TEXT NOT NULL,
+        doc_number TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft','pending','approved','rejected')),
+        tier_granted INTEGER,
+        reason TEXT,
+        reviewer_id INTEGER REFERENCES users(id),
+        created_at INTEGER NOT NULL,
+        submitted_at INTEGER,
+        reviewed_at INTEGER
+      );
+      CREATE INDEX kyc_status ON kyc_submissions(status, id);
+
+      -- Document images, stored encrypted on disk; only metadata lives here.
+      CREATE TABLE kyc_files (
+        id INTEGER PRIMARY KEY,
+        submission_id INTEGER NOT NULL REFERENCES kyc_submissions(id),
+        kind TEXT NOT NULL CHECK (kind IN ('front','back','selfie')),
+        path TEXT NOT NULL,
+        mime TEXT NOT NULL,
+        size INTEGER NOT NULL,
+        sha256 TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        UNIQUE (submission_id, kind)
+      );
+
+      CREATE TABLE alerts (
+        id INTEGER PRIMARY KEY,
+        user_id INTEGER NOT NULL REFERENCES users(id),
+        rule TEXT NOT NULL,
+        severity TEXT NOT NULL CHECK (severity IN ('info','low','medium','high')),
+        details TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open','closed')),
+        note TEXT,
+        closed_by INTEGER REFERENCES users(id),
+        created_at INTEGER NOT NULL,
+        closed_at INTEGER
+      );
+      CREATE INDEX alerts_status ON alerts(status, id);
+    `);
+  },
 ];
 
 function migrate(db) {

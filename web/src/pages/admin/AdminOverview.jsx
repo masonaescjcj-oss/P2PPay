@@ -2,7 +2,7 @@ import { Link, useOutletContext } from 'react-router-dom'
 import { Loading } from '../../components/Layout.jsx'
 import Icon from '../../components/Icon.jsx'
 import { usdt } from '../../lib/format.js'
-import { copyText, useApi } from '../../lib/hooks.js'
+import { copyText, useApi, useNow } from '../../lib/hooks.js'
 import { usePrefs } from '../../lib/prefs.jsx'
 
 function Tile({ to, label, value, alert }) {
@@ -17,10 +17,11 @@ function Tile({ to, label, value, alert }) {
 function ChainCard() {
   const { t } = usePrefs()
   const st = useApi('/admin/chain', { interval: 20000 })
+  const now = useNow(5000)
   const c = st.data
   if (!c || c.network === 'off') return null
   const sun = (v) => (v == null ? '—' : (Number(BigInt(v)) / 1e6).toLocaleString('en-US', { maximumFractionDigits: 2 }))
-  const age = c.lastTickAt ? Math.round((Date.now() - c.lastTickAt) / 1000) : null
+  const age = c.lastTickAt ? Math.max(0, Math.round((now - c.lastTickAt) / 1000)) : null
   return (
     <section className="card stack" style={{ gap: 12, borderColor: c.lastError || c.hotError ? 'var(--coral-tint-line)' : undefined }}>
       <div className="between">
@@ -51,7 +52,7 @@ function ChainCard() {
 
 export default function AdminOverview() {
   const { t } = usePrefs()
-  const { overview } = useOutletContext()
+  const { overview, perms } = useOutletContext()
   const o = overview.data
   if (!o) return <Loading />
   return (
@@ -61,9 +62,11 @@ export default function AdminOverview() {
         <Tile to="/admin/withdrawals" label={t('pendingWithdrawals')} value={o.pendingWithdrawals} alert={o.pendingWithdrawals > 0} />
         <Tile to="/admin/disputes" label={t('openDisputes')} value={o.disputes} alert={o.disputes > 0} />
         <Tile to="/admin/disputes" label={t('openTrades')} value={o.openTrades} />
+        <Tile to="/admin/kyc" label={t('kyc')} value={o.pendingKyc} alert={o.pendingKyc > 0} />
+        <Tile to="/admin/alerts" label={t('alerts')} value={o.openAlerts} alert={o.openAlerts > 0} />
         <Tile to="/admin/users" label={t('userCount')} value={o.users} />
       </div>
-      <ChainCard />
+      {perms.includes('funds') && <ChainCard />}
       <div className="grid-2">
         <div className="balance-card" style={{ gap: 6 }}>
           <span className="sub">{t('userBalances')}</span>

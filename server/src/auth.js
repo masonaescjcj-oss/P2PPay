@@ -2,6 +2,7 @@
 
 const crypto = require('node:crypto');
 const { ApiError, forbidden } = require('./errors');
+const { permsOf } = require('./security/roles');
 
 function hashPassword(password) {
   const salt = crypto.randomBytes(16);
@@ -32,7 +33,7 @@ function createAuth(db, config) {
 
   const insertSession = db.prepare('INSERT INTO sessions (token, user_id, expires_at) VALUES (?, ?, ?)');
   const findSession = db.prepare(
-    `SELECT u.id, u.username, u.display_name, u.role, u.is_blocked, s.expires_at
+    `SELECT u.id, u.username, u.display_name, u.role, u.is_blocked, u.kyc_tier, u.totp_enabled_at, s.expires_at
      FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token = ?`
   );
   const deleteSession = db.prepare('DELETE FROM sessions WHERE token = ?');
@@ -61,7 +62,11 @@ function createAuth(db, config) {
     if (token) {
       const row = findSession.get(token);
       if (row && row.expires_at > Date.now() && !row.is_blocked) {
-        req.user = { id: row.id, username: row.username, displayName: row.display_name, role: row.role };
+        req.user = {
+          id: row.id, username: row.username, displayName: row.display_name, role: row.role,
+          perms: permsOf(row.role), kycTier: row.kyc_tier, totpEnabled: !!row.totp_enabled_at,
+        };
+        req.sessionToken = token;
       } else if (row) {
         deleteSession.run(token);
       }
@@ -71,10 +76,17 @@ function createAuth(db, config) {
 
   const requireUser = (req, _res, next) =>
     next(req.user ? undefined : new ApiError(401, 'unauthorized'));
-  const requireAdmin = (req, _res, next) =>
-    next(!req.user ? new ApiError(401, 'unauthorized') : req.user.role !== 'admin' ? forbidden() : undefined);
 
-  return { login, logout, session, requireUser, requireAdmin };
+  // Staff guard: `perm` = null means any staff role. Staff must have 2FA on when required.
+  const requirePerm = (perm) => (req, _res, next) => {
+    if (!req.user) return next(new ApiError(401, 'unauthorized'));
+    const perms = req.user.perms;
+    if (!perms.length || (perm && !perms.includes(perm))) return next(forbidden());
+    if (config.requireStaff2fa && !req.user.totpEnabled) return next(forbidden('staff_2fa_required'));
+    next();
+  };
+
+  return { login, logout, session, requireUser, requirePerm };
 }
 
 // Tiny fixed-window rate limiter keyed by IP + route (in-memory, per process).

@@ -147,8 +147,8 @@ test('chain withdrawals: auto-send below limit, burn only on confirmation', asyn
   s.fake.usdt.set(kr.hotAddress, U(10_000));
   s.fake.trx.set(kr.hotAddress, 1_000_000_000n);
 
-  assert.equal((await c.post('/withdrawals', { amount: '100', address: kr.hotAddress })).data.error, 'invalid_address');
-  const wd = await c.post('/withdrawals', { amount: '100', address: OUT });
+  assert.equal((await s.withdraw(c, { amount: '100', address: kr.hotAddress })).data.error, 'invalid_address');
+  const wd = await s.withdraw(c, { amount: '100', address: OUT });
   assert.equal(wd.status, 201);
   await s.chain.tick();
   assert.equal(s.fake.sent.length, 1);
@@ -180,8 +180,8 @@ test('chain withdrawals: limits, admin send, broadcast rejection, revert, expiry
   s.fake.usdt.set(kr.hotAddress, U(10_000));
   s.fake.trx.set(kr.hotAddress, 1_000_000_000n);
 
-  const big = (await c.post('/withdrawals', { amount: '300', address: OUT })).data; // above auto limit
-  await fresh.post('/withdrawals', { amount: '10', address: OUT }); // account younger than 24h
+  const big = (await s.withdraw(c, { amount: '300', address: OUT })).data; // above auto limit
+  await s.withdraw(fresh, { amount: '10', address: OUT }); // account younger than 24h
   await s.chain.tick();
   assert.equal(s.fake.sent.length, 0);
 
@@ -232,7 +232,7 @@ test('chain withdrawals: limits, admin send, broadcast rejection, revert, expiry
   assert.ok(actions.includes('withdrawal_send') && actions.includes('withdrawal_reject'));
 
   // a "failed" attempt that in fact landed: retry settles it as sent instead of paying twice
-  const late = (await c.post('/withdrawals', { amount: '50', address: OUT })).data;
+  const late = (await s.withdraw(c, { amount: '50', address: OUT })).data;
   s.fake.reply = () => ({ result: false, code: 'SERVER_BUSY' });
   await s.admin.post(`/admin/withdrawals/${late.id}/send`);
   s.fake.outcomes.set(s.fake.sent.at(-1).txid, { ok: true });
@@ -245,7 +245,7 @@ test('chain withdrawals: limits, admin send, broadcast rejection, revert, expiry
 
   // hot wallet empty → admin send refused, stays pending
   s.fake.usdt.set(kr.hotAddress, 0n);
-  const small = (await c.post('/withdrawals', { amount: '20', address: OUT })).data;
+  const small = (await s.withdraw(c, { amount: '20', address: OUT })).data;
   assert.equal((await s.admin.post(`/admin/withdrawals/${small.id}/send`)).data.error, 'hot_wallet_low');
   assert.equal((await s.balance(c)).withdrawals.find((x) => x.id === small.id).status, 'pending');
 
@@ -262,8 +262,8 @@ test('daily auto-withdrawal cap', async (t) => {
   await s.fund(c, '500');
   s.fake.usdt.set(kr.hotAddress, U(10_000));
   s.fake.trx.set(kr.hotAddress, 1_000_000_000n);
-  await c.post('/withdrawals', { amount: '100', address: OUT });
-  await c.post('/withdrawals', { amount: '80', address: OUT });
+  await s.withdraw(c, { amount: '100', address: OUT });
+  await s.withdraw(c, { amount: '80', address: OUT });
   await s.chain.tick();
   assert.equal(s.fake.sent.length, 1); // 100 + 80 would exceed the 150/day cap
 });
