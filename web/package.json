@@ -9,7 +9,7 @@
     "lint": "oxlint",
     "preview": "vite preview",
     "check:strings": "node scripts/check-strings.mjs",
-    "build:demo": "vite build --config vite.demo.config.js && node demo/make-artifact.mjs"
+    "build:demo": "vite build --config vite.demo.config.js && node demo/make-snapshot.mjs && node demo/make-artifact.mjs"
   },
   "dependencies": {
     "@fontsource/manrope": "^5.3.0",

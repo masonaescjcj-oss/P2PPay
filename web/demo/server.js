@@ -4,12 +4,12 @@
 import appModule from '../../server/src/app.js'
 import baseConfig from '../../server/src/config.js'
 import { BRAND } from '../src/lib/brand.js'
-import authModule from '../../server/src/auth.js'
 
 const { createApp } = appModule
-const { hashPassword } = authModule
 
 export const ADMIN = { username: 'admin', password: 'admin-test-1405' }
+// scrypt hash of ADMIN.password, made once ahead of time: hashing in page JavaScript takes seconds on a phone.
+const ADMIN_HASH = 'scrypt$23d5d337184a5f0466a8a01329f0eeae$98c7ad7fab5c8ffcd9f20eaa63494cded5442e9999d215a94a2ef0484050f0118e811546b0729d0b27bac53bc274824c5a8395150a9b301470c5b1578b912a20'
 const KEY_STORE = 'ariapay.demo.key'
 const COOKIE_STORE = 'ariapay.demo.cookie'
 const DB_NAME = 'ariapay-demo'
@@ -109,14 +109,18 @@ const EXTRA_ACCOUNTS = { demo_karim: ['mpaisa', 'cash'], demo_ahmad: ['hawala'],
 
 async function seed(db) {
   const now = Date.now()
+  await db.run(
+    "INSERT INTO users (username, display_name, password_hash, role, created_at) VALUES (?, 'Admin', ?, 'admin', ?) ON CONFLICT DO NOTHING",
+    [ADMIN.username, ADMIN_HASH, now]
+  )
   for (const b of BOTS) {
     let u = await db.one('SELECT id FROM users WHERE username = ?', [b.username])
     if (!u) {
-      const pw = crypto.getRandomValues(new Uint8Array(18)).join('')
       u = await db.one(
         `INSERT INTO users (username, display_name, password_hash, phone, phone_verified_at, kyc_tier, created_at)
          VALUES (?, ?, ?, ?, ?, 2, ?) RETURNING id`,
-        [b.username, b.name, hashPassword(pw), b.phone, now, now - 30 * 86_400_000]
+        // Sample traders never sign in: no usable password (and no slow hashing at startup).
+        [b.username, b.name, 'disabled', b.phone, now, now - 30 * 86_400_000]
       )
       for (const method of [b.method, ...EXTRA_ACCOUNTS[b.username]]) {
         await db.run(
@@ -217,46 +221,68 @@ async function canUseIndexedDb() {
 }
 
 // PGlite's file-system image, published as assets/pglite-fs.wasm (a byte file under a served name).
-async function fsBundle() {
-  const res = await fetch(new URL('assets/pglite-fs.wasm', document.baseURI))
+async function asset(name) {
+  const res = await fetch(new URL(`assets/${name}`, document.baseURI))
   if (!res.ok) throw new Error(`database files: HTTP ${res.status}`)
   return new Blob([await res.arrayBuffer()])
 }
+const fsBundle = () => asset('pglite-fs.wasm')
 
-export async function startDemoServer({ onStatus } = {}) {
+// true / false when the browser can list its databases, null when it can't tell.
+async function savedDbExists() {
+  try {
+    if (indexedDB.databases) return (await indexedDB.databases()).some((d) => d.name === `/pglite/${DB_NAME}`)
+  } catch {
+    // listing not allowed
+  }
+  return null
+}
+
+export async function startDemoServer() {
   const persistent = await canUseIndexedDb()
+  // A new database starts from a snapshot with every migration applied (built by make-snapshot.mjs).
+  const fresh = !persistent || (await savedDbExists()) !== true
+  const [bundle, snapshot] = await Promise.all([fsBundle(), fresh ? asset('pglite-snapshot.wasm') : null])
   const config = {
     ...baseConfig,
     databaseUrl: '',
     pgliteDir: persistent ? `idb://${DB_NAME}` : ':memory:',
-    pgliteOptions: { fsBundle: await fsBundle() },
+    // relaxedDurability: write to IndexedDB after answering, not before (much faster on phones).
+    pgliteOptions: { fsBundle: bundle, ...(snapshot && { loadDataDir: snapshot }) },
     dataKey: dataKey(),
     nodeEnv: 'development',
     requireStaff2fa: false,
-    adminUsername: ADMIN.username,
-    adminPassword: ADMIN.password,
+    // The admin account is created by seed() with a ready-made hash.
+    adminUsername: '',
+    adminPassword: '',
     otpResendMs: 5000,
     cookieSecure: false,
     storage: { provider: 'local' },
     tron: { ...baseConfig.tron, network: 'off' },
     appName: BRAND,
-    beta: { inviteOnly: false, maxTradeMicro: 100_000_000, maxOfferMicro: 500_000_000, label: '' },
+    // No beta banner or beta caps in the test version (the new-account limit still applies).
+    beta: { inviteOnly: false, maxTradeMicro: 0, maxOfferMicro: 0, label: '' },
   }
   const quiet = { log() {}, info() {}, warn: (...a) => console.debug(...a), error: (...a) => console.error(...a) }
-  onStatus?.('db')
   // Background timers inside the app (trade expiry) also take the one-at-a-time lane.
   const realSetInterval = globalThis.setInterval
   globalThis.setInterval = (fn, ms, ...a) => realSetInterval(() => serial(() => fn(...a)), ms)
   try {
-    app = await createApp(config, { sms, storage: blobStore(), log: quiet, autoStartChain: false })
+    try {
+      app = await createApp(config, { sms, storage: blobStore(), log: quiet, autoStartChain: false })
+    } catch (err) {
+      // The browser couldn't tell us a saved database existed: open that one instead.
+      if (!snapshot || !/already exists/.test(err?.message)) throw err
+      app = await createApp({ ...config, pgliteOptions: { fsBundle: bundle } }, { sms, storage: blobStore(), log: quiet, autoStartChain: false })
+    }
   } finally {
     globalThis.setInterval = realSetInterval
   }
   services = app.locals.services
   const db = app.locals.db
-  onStatus?.('seed')
   await serial(() => seed(db))
-  await serial(() => botTick(db, services))
+  // First round runs in the background; the app's own requests queue behind it.
+  serial(() => botTick(db, services)).catch((e) => console.error('[demo] sample traders', e))
   setInterval(() => serial(() => botTick(db, services)).catch((e) => console.error('[demo] sample traders', e)), 2500)
   return { persistent }
 }

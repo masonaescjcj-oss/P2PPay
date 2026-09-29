@@ -64,7 +64,7 @@ async function main() {
     return
   }
   try {
-    await startDemoServer({ onStatus: (s) => setBoot(s === 'db' ? 'در حال آماده‌سازی پایگاه‌داده… · Preparing the database…' : 'در حال ساخت معامله‌گران نمونه… · Adding sample traders…') })
+    await startDemoServer()
   } catch (err) {
     console.error(err)
     boot?.classList.add('failed')

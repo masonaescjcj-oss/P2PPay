@@ -69,7 +69,7 @@ export default function Chat() {
   const other = tr ? (tr.role === 'buyer' ? tr.seller : tr.buyer) : null
 
   return (
-    <main style={{ minHeight: '100dvh', display: 'flex', flexDirection: 'column' }}>
+    <main style={{ display: 'flex', flexDirection: 'column' }}>
       <header className="chat-head">
         <div className="row" style={{ gap: 12 }}>
           <button type="button" className="icon-btn" aria-label={t('back')} onClick={() => navigate(`/trades/${id}`)}>

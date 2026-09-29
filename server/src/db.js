@@ -154,6 +154,8 @@ async function openDb(config, { log = console } = {}) {
       exec: (sql) => lock(() => lite.exec(sql)),
       leader: async () => ({ release: async () => {} }),
       close: () => lite.close(),
+      // The whole data directory as a tarball (the browser test build ships a migrated snapshot).
+      dumpDataDir: (compression) => lock(() => lite.dumpDataDir(compression)),
     };
   }
 
@@ -175,6 +177,7 @@ async function openDb(config, { log = console } = {}) {
     },
     leader: (key) => backend.leader(key),
     close: () => backend.close(),
+    dumpDataDir: backend.dumpDataDir,
   };
 
   const quiet = !config.databaseUrl && (!config.pgliteDir || config.pgliteDir === ':memory:');

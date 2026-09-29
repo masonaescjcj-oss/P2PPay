@@ -121,9 +121,8 @@ export default function DemoPanel() {
 
   return (
     <>
-      <button type="button" className="demo-fab" hidden={open} onClick={() => { setNote(null); setConfirmReset(false); setOpen(true) }}>
-        <span className="demo-dot" aria-hidden="true" />
-        {tx('badge')}
+      <button type="button" className="demo-fab" hidden={open} aria-label={tx('badge')} title={tx('badge')} onClick={() => { setNote(null); setConfirmReset(false); setOpen(true) }}>
+        <Icon name="settings" size={18} />
       </button>
 
       {toast && (
