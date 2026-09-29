@@ -45,6 +45,7 @@ async function createApp(config, deps = {}) {
     onTradeOpened: alerts.onTradeOpened,
     onBuyerCancelled: alerts.onBuyerCancelled,
     onDispute: alerts.onDispute,
+    onRevealAbuse: (userId, n) => alerts.raise(userId, 'reveal_abuse', 'high', { cancelsLast24h: n }),
     notify,
   });
   const chainOn = config.tron && config.tron.network !== 'off';
@@ -126,6 +127,7 @@ async function createApp(config, deps = {}) {
       withdrawFee: m.fmtUsdt(config.withdrawFeeMicro),
       minWithdraw: m.fmtUsdt(config.minWithdrawMicro),
       paymentMethods: config.paymentMethods,
+      acceptWindowMin: config.safety?.acceptWindowMin ?? 10,
       beta: beta.publicConfig(),
       termsVersion: config.termsVersion,
       support: Object.fromEntries(Object.entries(config.support || {}).filter(([, v]) => v)),
@@ -153,7 +155,11 @@ async function createApp(config, deps = {}) {
   });
 
   // ---------- public trader profiles ----------
-  api.get('/users/:username', async (req, res) => res.json(await market.publicProfile(req.params.username)));
+  api.get('/users/:username', async (req, res) => res.json(await market.publicProfile(req.params.username, req.user?.id ?? null)));
+  // Blocking: neither side sees the other's offers or can open a trade with them.
+  api.get('/me/blocks', u, async (req, res) => res.json(await market.blocks(req.user.id)));
+  api.post('/users/:username/block', u, async (req, res) => res.json(await market.block(req.user.id, req.params.username)));
+  api.post('/users/:username/unblock', u, async (req, res) => res.json(await market.unblock(req.user.id, req.params.username)));
 
   // ---------- beta: feedback and error reports ----------
   api.get('/feedback', u, async (req, res) => res.json(await beta.myFeedback(req.user.id)));
@@ -235,7 +241,9 @@ async function createApp(config, deps = {}) {
 
   // ---------- offers ----------
   api.get('/offers', async (req, res) => {
-    res.json(await market.listMarket({ side: req.query.side, paymentMethod: req.query.paymentMethod, fiat: req.query.fiat }));
+    res.json(await market.listMarket({
+      side: req.query.side, paymentMethod: req.query.paymentMethod, fiat: req.query.fiat, viewerId: req.user?.id ?? null,
+    }));
   });
   api.get('/offers/mine', u, async (req, res) => res.json(await market.myOffers(req.user.id)));
   api.get('/offers/:id', async (req, res) => res.json(await market.offer(id(req))));
@@ -250,7 +258,7 @@ async function createApp(config, deps = {}) {
   // ---------- trades ----------
   api.get('/trades', u, async (req, res) => res.json(await market.myTrades(req.user.id)));
   api.get('/trades/:id', u, async (req, res) => res.json(await market.trade(req.user.id, id(req), isStaff(req))));
-  for (const action of ['pay', 'release', 'cancel', 'dispute']) {
+  for (const action of ['accept', 'decline', 'pay', 'release', 'cancel', 'dispute']) {
     api.post(`/trades/:id/${action}`, u, async (req, res) => res.json(await market.action(req.user.id, id(req), action, req.body)));
   }
   api.post('/trades/:id/rate', u, async (req, res) => res.json(await market.rate(req.user.id, id(req), req.body)));

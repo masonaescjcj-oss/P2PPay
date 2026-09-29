@@ -151,15 +151,20 @@ async function botTick(db, s) {
   const ids = BOTS.map((b) => b.id)
   const list = ids.map(Number).join(',') // ids come from the database
   const trades = await db.query(
-    `SELECT id, buyer_id, seller_id, status FROM trades
+    `SELECT id, buyer_id, seller_id, status, accepted_at FROM trades
      WHERE status IN ('pending_payment','paid') AND (buyer_id IN (${list}) OR seller_id IN (${list}))`
   )
   const t0 = Date.now()
   for (const t of trades) {
-    const key = `${t.id}:${t.status}`
+    const waiting = t.status === 'pending_payment' && !t.accepted_at
+    const key = `${t.id}:${t.status}:${waiting ? 'request' : 'open'}`
     if (!seen.has(key)) {
       seen.set(key, t0)
-      if (t.status === 'pending_payment') {
+      if (waiting) {
+        if (ids.includes(t.seller_id)) {
+          await market.postMessage(t.seller_id, t.id, 'سلام! درخواست شما را دیدم؛ چند ثانیه دیگر می‌پذیرم تا حساب پرداخت برایتان نمایش داده شود. (آزمایشی)').catch(() => {})
+        }
+      } else if (t.status === 'pending_payment') {
         const bot = ids.includes(t.seller_id) ? t.seller_id : t.buyer_id
         await market.postMessage(bot, t.id, ids.includes(t.seller_id)
           ? 'سلام! من حساب نمونه‌ام. پول را به حسابی که در معامله نشان داده شده بفرستید (در آزمایش لازم نیست واقعاً بفرستید) و «پرداخت کردم» را بزنید.'
@@ -168,7 +173,10 @@ async function botTick(db, s) {
       continue
     }
     if (t0 - seen.get(key) < 5000) continue
-    if (t.status === 'pending_payment' && ids.includes(t.buyer_id)) {
+    if (waiting) {
+      // Sample sellers approve every request (a real seller would look at the buyer first).
+      if (ids.includes(t.seller_id)) await market.action(t.seller_id, t.id, 'accept', {}).catch(() => {})
+    } else if (t.status === 'pending_payment' && ids.includes(t.buyer_id)) {
       await market.postMessage(t.buyer_id, t.id, 'پرداخت کردم ✓ (آزمایشی)').catch(() => {})
       await market.action(t.buyer_id, t.id, 'pay', {}).catch(() => {})
     } else if (t.status === 'paid' && ids.includes(t.seller_id)) {

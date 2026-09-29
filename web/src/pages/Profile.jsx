@@ -81,6 +81,7 @@ export default function Profile() {
             </span>
           </Row>
           <Row icon="shieldCheck" tone="green" label={t('securityTitle')} value={user.totpEnabled ? '2FA ✓' : undefined} to="/profile/security" />
+          <Row icon="x" tone="coral" label={t('blockedUsers')} to="/profile/blocked" />
           <Row icon="chat" tone="blue" label={t('feedbackTitle')} to="/profile/feedback" />
           {!install.installed && (install.canPrompt || install.ios) && (
             <Row icon="phone" tone="gold" label={t('installApp')} onClick={() => (install.canPrompt ? install.prompt() : setIosHelp(true))} />

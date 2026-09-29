@@ -9,6 +9,8 @@ import { useApi } from '../lib/hooks.js'
 import { usePrefs } from '../lib/prefs.jsx'
 
 const WINDOWS = [15, 30, 45, 60]
+const MIN_TRADES = [0, 1, 5, 20]
+const MIN_DAYS = [0, 7, 30, 90]
 const num = (s) => s.replace(/[,٬\s]/g, '')
 
 export default function CreateOffer() {
@@ -22,6 +24,11 @@ export default function CreateOffer() {
   const [f, setF] = useState({ price: '', total: '', minFiat: '', maxFiat: '', terms: '' })
   const [methods, setMethods] = useState([])
   const [payWindow, setPayWindow] = useState(30)
+  // Safety: seller approval (on by default for sell offers) and who may take the offer.
+  const [requireAccept, setRequireAccept] = useState(true)
+  const [minTrades, setMinTrades] = useState(0)
+  const [minAccountDays, setMinAccountDays] = useState(0)
+  const [requireId, setRequireId] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
 
@@ -48,6 +55,10 @@ export default function CreateOffer() {
         paymentMethods: methods,
         paymentWindow: payWindow,
         terms: f.terms,
+        requireAccept: side === 'sell' && requireAccept,
+        minTrades,
+        minAccountDays,
+        requireId,
       })
       navigate('/orders?tab=offers', { replace: true })
     } catch (err) {
@@ -133,6 +144,46 @@ export default function CreateOffer() {
             ))}
           </div>
         </fieldset>
+
+        <section className="card stack" style={{ gap: 16 }}>
+          <div className="row" style={{ gap: 8 }}>
+            <Icon name="shield" size={20} />
+            <strong style={{ fontSize: 15 }}>{t('safetyTitle')}</strong>
+          </div>
+          {side === 'sell' && (
+            <div className="toggle-row">
+              <div className="stack" style={{ gap: 2 }}>
+                <span id="req-accept" className="strong" style={{ fontSize: 14 }}>{t('requireAccept')}</span>
+                <span className="hint">{t('requireAcceptSub', { n: config?.acceptWindowMin ?? 10 })}</span>
+              </div>
+              <button type="button" role="switch" className="switch" aria-checked={requireAccept} aria-labelledby="req-accept" onClick={() => setRequireAccept(!requireAccept)} />
+            </div>
+          )}
+          <fieldset className="field" style={{ border: 0, padding: 0, margin: 0 }}>
+            <legend className="label" style={{ marginBottom: 8 }}>{t('minTradesLabel')}</legend>
+            <div className="grid-4" style={{ gap: 8 }}>
+              {MIN_TRADES.map((n) => (
+                <button key={n} type="button" className="chip square" style={{ justifyContent: 'center' }} aria-pressed={minTrades === n} onClick={() => setMinTrades(n)}>
+                  {n ? <span className="num">{n}</span> : t('anyValue')}
+                </button>
+              ))}
+            </div>
+          </fieldset>
+          <fieldset className="field" style={{ border: 0, padding: 0, margin: 0 }}>
+            <legend className="label" style={{ marginBottom: 8 }}>{t('minAccountDaysLabel')}</legend>
+            <div className="grid-4" style={{ gap: 8 }}>
+              {MIN_DAYS.map((n) => (
+                <button key={n} type="button" className="chip square" style={{ justifyContent: 'center' }} aria-pressed={minAccountDays === n} onClick={() => setMinAccountDays(n)}>
+                  {n ? t('daysN', { n }) : t('anyValue')}
+                </button>
+              ))}
+            </div>
+          </fieldset>
+          <div className="toggle-row">
+            <span id="req-id" className="strong" style={{ fontSize: 14 }}>{t('requireIdLabel')}</span>
+            <button type="button" role="switch" className="switch" aria-checked={requireId} aria-labelledby="req-id" onClick={() => setRequireId(!requireId)} />
+          </div>
+        </section>
 
         <div className="field" style={{ gap: 6 }}>
           <label htmlFor="terms" className="label">{t('terms')}</label>

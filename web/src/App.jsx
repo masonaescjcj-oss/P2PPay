@@ -13,6 +13,7 @@ import Orders from './pages/Orders.jsx'
 import PaymentAccounts from './pages/PaymentAccounts.jsx'
 import Profile from './pages/Profile.jsx'
 import Feedback from './pages/Feedback.jsx'
+import BlockedUsers from './pages/BlockedUsers.jsx'
 import Notifications from './pages/Notifications.jsx'
 import TraderProfile from './pages/TraderProfile.jsx'
 import { HelpPage, LegalPage, SupportPage } from './pages/Info.jsx'
@@ -67,6 +68,7 @@ export default function App() {
           <Route path="/profile/security" element={priv(<Security />)} />
           <Route path="/profile/verification" element={priv(<Verification />)} />
           <Route path="/profile/feedback" element={priv(<Feedback />)} />
+          <Route path="/profile/blocked" element={priv(<BlockedUsers />)} />
           <Route path="/admin" element={<RequireAdmin><AdminLayout /></RequireAdmin>}>
             <Route index element={<AdminOverview />} />
             <Route path="deposits" element={<AdminFunds kind="deposits" key="deposits" />} />

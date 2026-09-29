@@ -24,6 +24,14 @@ function createMarket(db, wallet, config, hooks = {}) {
   const nameOf = (id) => db.one('SELECT id, username, display_name FROM users WHERE id = ?', [id]);
   const notify = (userId, kind, data) => hooks.notify?.(userId, kind, data);
   const other = (t, userId) => (t.buyer_id === userId ? t.seller_id : t.buyer_id);
+  const safety = config.safety || {};
+  const DAY = 86_400_000;
+  // Either side blocked the other.
+  const blocked = async (a, b) =>
+    !!(await db.one(
+      'SELECT 1 AS x FROM user_blocks WHERE (blocker_id = ? AND blocked_id = ?) OR (blocker_id = ? AND blocked_id = ?)',
+      [a, b, b, a]
+    ));
 
   async function stats(userId) {
     const s = await db.one(
@@ -58,6 +66,12 @@ function createMarket(db, wallet, config, hooks = {}) {
       paymentMethods: JSON.parse(o.payment_methods),
       terms: o.terms,
       paymentWindow: o.payment_window,
+      requirements: {
+        requireAccept: o.require_accept,
+        minTrades: o.min_trades,
+        minAccountDays: o.min_account_days,
+        requireId: o.require_id,
+      },
       status: o.status,
       createdAt: o.created_at,
       maker: { id: maker.id, username: maker.username, displayName: maker.display_name, ...(await stats(maker.id)) },
@@ -68,6 +82,10 @@ function createMarket(db, wallet, config, hooks = {}) {
     const [b, s, offer, acct] = await Promise.all([
       nameOf(t.buyer_id), nameOf(t.seller_id), getOffer(t.offer_id), getAccount(t.seller_id, t.payment_method),
     ]);
+    const isParty = viewerId === t.buyer_id || viewerId === t.seller_id;
+    // The buyer sees the seller's account only while a payment is due — not before the seller accepts,
+    // and not after the trade is cancelled, expired or done. Seller and staff always see it.
+    const showAccount = viewerId !== t.buyer_id || (!!t.accepted_at && ['pending_payment', 'paid', 'disputed'].includes(t.status));
     return {
       id: t.id,
       offerId: t.offer_id,
@@ -82,7 +100,10 @@ function createMarket(db, wallet, config, hooks = {}) {
       paymentMethod: t.payment_method,
       terms: offer.terms,
       // The seller's receiving account for the chosen method; only trade parties and staff see trades.
-      paymentAccount: acct ? { holderName: acct.holder_name, account: acct.account } : null,
+      paymentAccount: acct && showAccount ? { holderName: acct.holder_name, account: acct.account } : null,
+      awaitingAccept: t.status === 'pending_payment' && !t.accepted_at,
+      acceptedAt: t.accepted_at,
+      counterparty: isParty ? await partySummary(other(t, viewerId)) : null,
       status: t.status,
       disputeReason: t.dispute_reason,
       resolution: t.resolution,
@@ -116,6 +137,16 @@ function createMarket(db, wallet, config, hooks = {}) {
     const terms = String(input.terms ?? '').trim().slice(0, 1000);
     const window = Number.parseInt(input.paymentWindow ?? config.defaultPaymentWindowMin, 10);
     if (!(window >= 10 && window <= 180)) throw bad('invalid_payment_window');
+    // Who may take the offer. Seller approval (sell offers only) keeps the payment account hidden
+    // until the seller has looked at the buyer.
+    const minTrades = Number.parseInt(input.minTrades ?? 0, 10);
+    const minAccountDays = Number.parseInt(input.minAccountDays ?? 0, 10);
+    if (!(minTrades >= 0 && minTrades <= 1000) || !(minAccountDays >= 0 && minAccountDays <= 3650)) throw bad('invalid_requirements');
+    const requireId = input.requireId === true;
+    const requireAccept = side === 'sell' &&
+      (input.requireAccept === undefined ? safety.requireAcceptByDefault !== false : input.requireAccept === true);
+    const frozen = await db.one('SELECT trade_frozen_until FROM users WHERE id = ?', [userId]);
+    if (frozen?.trade_frozen_until > now()) throw forbidden('trading_paused', { until: frozen.trade_frozen_until });
     // A seller must be able to tell buyers where to send AFN.
     if (side === 'sell') {
       for (const pm of methods) if (!(await getAccount(userId, pm))) throw bad('missing_payment_account');
@@ -123,9 +154,11 @@ function createMarket(db, wallet, config, hooks = {}) {
 
     const o = await db.tx(async () => {
       const row = await db.one(
-        `INSERT INTO offers (user_id, side, price, total, remaining, min_fiat, max_fiat, payment_methods, terms, payment_window, status, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?) RETURNING *`,
-        [userId, side, price, total, total, minFiat, maxFiat, JSON.stringify(methods), terms, window, now()]
+        `INSERT INTO offers (user_id, side, price, total, remaining, min_fiat, max_fiat, payment_methods, terms, payment_window,
+                             require_accept, min_trades, min_account_days, require_id, status, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?) RETURNING *`,
+        [userId, side, price, total, total, minFiat, maxFiat, JSON.stringify(methods), terms, window,
+          requireAccept, minTrades, minAccountDays, requireId, now()]
       );
       // A sell offer's USDT is held in escrow for as long as the offer is open.
       if (side === 'sell') await wallet.lock(userId, total, 'offer_lock', { type: 'offer', id: row.id });
@@ -151,14 +184,17 @@ function createMarket(db, wallet, config, hooks = {}) {
   }
 
   // side is from the visitor's point of view: 'buy' lists sell offers and vice versa.
-  async function listMarket({ side = 'buy', paymentMethod, fiat } = {}) {
+  async function listMarket({ side = 'buy', paymentMethod, fiat, viewerId = null } = {}) {
     const offerSide = side === 'sell' ? 'buy' : 'sell';
     const order = offerSide === 'sell' ? 'ASC' : 'DESC';
+    // Offers of anyone the viewer blocked, or who blocked the viewer, are left out.
     let rows = await db.query(
       `SELECT o.* FROM offers o JOIN users u ON u.id = o.user_id
        WHERE o.status = 'active' AND o.side = ? AND o.remaining > 0 AND u.is_blocked = 0
+         AND NOT EXISTS (SELECT 1 FROM user_blocks b
+                         WHERE (b.blocker_id = o.user_id AND b.blocked_id = ?) OR (b.blocker_id = ? AND b.blocked_id = o.user_id))
        ORDER BY o.price ${order}, o.id ASC LIMIT 200`,
-      [offerSide]
+      [offerSide, viewerId ?? 0, viewerId ?? 0]
     );
     if (paymentMethod) rows = rows.filter((o) => JSON.parse(o.payment_methods).includes(paymentMethod));
     rows = rows.filter((o) => m.fiatFor(o.remaining, o.price) >= o.min_fiat);
@@ -187,6 +223,17 @@ function createMarket(db, wallet, config, hooks = {}) {
       if (o.user_id === takerId) throw bad('own_offer');
       const maker = await db.one('SELECT is_blocked FROM users WHERE id = ?', [o.user_id]);
       if (maker.is_blocked) throw conflict('offer_unavailable');
+      if (await blocked(o.user_id, takerId)) throw conflict('offer_unavailable');
+      const taker = await db.one('SELECT kyc_tier, created_at, trade_frozen_until FROM users WHERE id = ?', [takerId]);
+      const ts = now();
+      if (taker.trade_frozen_until > ts) throw forbidden('trading_paused', { until: taker.trade_frozen_until });
+      const done = (await db.one(
+        "SELECT COUNT(*) AS n FROM trades WHERE (buyer_id = ? OR seller_id = ?) AND status = 'completed'", [takerId, takerId]
+      )).n;
+      const ageDays = Math.floor((ts - taker.created_at) / DAY);
+      if (done < o.min_trades || ageDays < o.min_account_days || (o.require_id && taker.kyc_tier < 2)) {
+        throw bad('requirements_not_met', null, { minTrades: o.min_trades, minAccountDays: o.min_account_days, requireId: o.require_id });
+      }
 
       let amount;
       if (input.fiat !== undefined && input.fiat !== '') {
@@ -199,6 +246,11 @@ function createMarket(db, wallet, config, hooks = {}) {
       if (!amount) throw bad('invalid_amount');
       const cap = config.beta?.maxTradeMicro;
       if (cap && amount > cap) throw bad('beta_trade_limit', null, { max: m.fmtUsdt(cap) });
+      // New accounts start small: a throwaway account cannot open large trades to fish for accounts.
+      const newCap = safety.newAccountMaxMicro;
+      if (newCap && amount > newCap && ageDays < (safety.newAccountDays ?? 7) && done < (safety.newAccountTrades ?? 3)) {
+        throw bad('new_account_limit', null, { max: m.fmtUsdt(newCap) });
+      }
       const fiat = m.fiatFor(amount, o.price);
       if (amount > o.remaining) throw conflict('exceeds_available');
       if (fiat < o.min_fiat || fiat > o.max_fiat) throw bad('outside_limits');
@@ -219,17 +271,20 @@ function createMarket(db, wallet, config, hooks = {}) {
       const sellerId = o.side === 'sell' ? o.user_id : takerId;
       await hooks.assertTrade?.({ actorId: takerId, buyerId, sellerId, amount });
       const fee = m.feeFor(amount, config.tradeFeeBps);
-      const ts = now();
+      // With seller approval the trade first waits a short accept window; the payment timer starts on accept.
+      const waits = o.side === 'sell' && o.require_accept;
+      const expires = ts + (waits ? (safety.acceptWindowMin ?? 10) : o.payment_window) * 60_000;
       const trade = await db.one(
-        `INSERT INTO trades (offer_id, maker_id, taker_id, buyer_id, seller_id, amount, price, fiat, fee, payment_method, status, expires_at, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending_payment', ?, ?) RETURNING *`,
-        [o.id, o.user_id, takerId, buyerId, sellerId, amount, o.price, fiat, fee, pm, ts + o.payment_window * 60_000, ts]
+        `INSERT INTO trades (offer_id, maker_id, taker_id, buyer_id, seller_id, amount, price, fiat, fee, payment_method, status,
+                             expires_at, accepted_at, revealed_at, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending_payment', ?, ?, ?, ?) RETURNING *`,
+        [o.id, o.user_id, takerId, buyerId, sellerId, amount, o.price, fiat, fee, pm, expires, waits ? null : ts, waits ? null : ts, ts]
       );
       await db.run('UPDATE offers SET remaining = remaining - ? WHERE id = ?', [amount, o.id]);
       // For a buy offer the taker is the seller: lock their USDT now.
       if (o.side === 'buy') await wallet.lock(sellerId, amount, 'trade_lock', { type: 'trade', id: trade.id });
-      await sys(trade.id, 'trade_opened');
-      await notify(o.user_id, 'trade_opened', { tradeId: trade.id, amount: m.fmtUsdt(amount) });
+      await sys(trade.id, waits ? 'trade_awaiting_accept' : 'trade_opened');
+      await notify(o.user_id, waits ? 'trade_request' : 'trade_opened', { tradeId: trade.id, amount: m.fmtUsdt(amount) });
       await hooks.onTradeOpened?.(trade);
       return trade;
     });
@@ -261,10 +316,30 @@ function createMarket(db, wallet, config, hooks = {}) {
       await notify(t.buyer_id, 'trade_resolved', data);
       await notify(t.seller_id, 'trade_resolved', data);
     } else if (resolution === 'cancelled_by_buyer') await notify(t.seller_id, 'trade_cancelled', data);
+    else if (resolution === 'declined_by_seller') await notify(t.buyer_id, 'trade_declined', data);
     else {
       await notify(t.buyer_id, 'trade_cancelled', data);
       await notify(t.seller_id, 'trade_cancelled', data);
     }
+    if (status === 'cancelled' && t.revealed_at && ['cancelled_by_buyer', 'expired'].includes(resolution)) await checkRevealAbuse(t.buyer_id);
+  }
+
+  // A buyer who keeps cancelling (or letting expire) trades after seeing the seller's account is likely
+  // collecting accounts: pause their trading and alert staff.
+  async function checkRevealAbuse(buyerId) {
+    const limit = safety.revealCancelLimit ?? 3;
+    if (!limit) return;
+    const ts = now();
+    const { n } = await db.one(
+      `SELECT COUNT(*) AS n FROM trades
+       WHERE buyer_id = ? AND status = 'cancelled' AND revealed_at IS NOT NULL
+         AND resolution IN ('cancelled_by_buyer','expired') AND closed_at > ?`,
+      [buyerId, ts - DAY]
+    );
+    if (n < limit) return;
+    const until = ts + (safety.freezeDays ?? 7) * DAY;
+    const r = await db.run('UPDATE users SET trade_frozen_until = ? WHERE id = ? AND trade_frozen_until < ?', [until, buyerId, ts]);
+    if (r.rowCount) await hooks.onRevealAbuse?.(buyerId, n);
   }
 
   // Cancels unpaid trades whose payment window ended. Safe to run from several processes at once.
@@ -275,7 +350,8 @@ function createMarket(db, wallet, config, hooks = {}) {
       await db.tx(async () => {
         const t = await db.one("SELECT * FROM trades WHERE id = ? AND status = 'pending_payment' AND expires_at < ? FOR UPDATE SKIP LOCKED", [id, now()]);
         if (!t) return;
-        await close(t, 'cancelled', 'expired');
+        // A request the seller never answered is closed as not accepted, not as an unpaid trade.
+        await close(t, 'cancelled', t.accepted_at ? 'expired' : 'not_accepted');
         n++;
       });
     }
@@ -297,9 +373,26 @@ function createMarket(db, wallet, config, hooks = {}) {
       const isBuyer = t.buyer_id === userId;
       const isSeller = t.seller_id === userId;
       switch (act) {
+        case 'accept': {
+          if (!isSeller) throw forbidden();
+          if (t.status !== 'pending_payment' || t.accepted_at) throw conflict('invalid_state');
+          const o = await getOffer(t.offer_id);
+          const ts = now();
+          await db.run('UPDATE trades SET accepted_at = ?, revealed_at = ?, expires_at = ? WHERE id = ?',
+            [ts, ts, ts + o.payment_window * 60_000, t.id]);
+          await sys(t.id, 'trade_accepted');
+          await notify(t.buyer_id, 'trade_accepted', { tradeId: t.id, amount: m.fmtUsdt(t.amount) });
+          break;
+        }
+        case 'decline':
+          if (!isSeller) throw forbidden();
+          if (t.status !== 'pending_payment' || t.accepted_at) throw conflict('invalid_state');
+          await close(t, 'cancelled', 'declined_by_seller');
+          break;
         case 'pay':
           if (!isBuyer) throw forbidden();
           if (t.status !== 'pending_payment') throw conflict('invalid_state');
+          if (!t.accepted_at) throw conflict('awaiting_acceptance');
           await db.run("UPDATE trades SET status = 'paid', paid_at = ? WHERE id = ?", [now(), t.id]);
           await sys(t.id, 'trade_marked_paid');
           await notify(t.seller_id, 'trade_paid', { tradeId: t.id, amount: m.fmtUsdt(t.amount) });
@@ -307,6 +400,7 @@ function createMarket(db, wallet, config, hooks = {}) {
         case 'release':
           if (!isSeller) throw forbidden();
           if (t.status !== 'paid' && t.status !== 'pending_payment') throw conflict('invalid_state');
+          if (!t.accepted_at) throw conflict('awaiting_acceptance');
           await close(t, 'completed', 'released');
           break;
         case 'cancel':
@@ -412,13 +506,52 @@ function createMarket(db, wallet, config, hooks = {}) {
     return tradeView(await getTrade(tradeId), userId);
   }
 
+  // What a trade party sees about the other side (for the seller deciding whether to accept).
+  async function partySummary(userId) {
+    const u = await db.one('SELECT username, kyc_tier, created_at FROM users WHERE id = ?', [userId]);
+    return { username: u.username, memberSince: u.created_at, idVerified: u.kyc_tier >= 2, ...(await stats(userId)) };
+  }
+
+  // ---------- blocking ----------
+  const findUser = (username) =>
+    db.one("SELECT id FROM users WHERE lower(username) = lower(?) AND role = 'user'", [String(username ?? '')]);
+
+  async function block(userId, username) {
+    const u = await findUser(username);
+    if (!u) throw notFound();
+    if (u.id === userId) throw bad('cannot_block_self');
+    await db.run('INSERT INTO user_blocks (blocker_id, blocked_id, created_at) VALUES (?, ?, ?) ON CONFLICT DO NOTHING', [userId, u.id, now()]);
+    return { ok: true };
+  }
+
+  async function unblock(userId, username) {
+    const u = await findUser(username);
+    if (!u) throw notFound();
+    await db.run('DELETE FROM user_blocks WHERE blocker_id = ? AND blocked_id = ?', [userId, u.id]);
+    return { ok: true };
+  }
+
+  async function blocks(userId) {
+    const rows = await db.query(
+      `SELECT u.username, u.display_name, b.created_at FROM user_blocks b JOIN users u ON u.id = b.blocked_id
+       WHERE b.blocker_id = ? ORDER BY b.created_at DESC LIMIT 500`,
+      [userId]
+    );
+    return rows.map((r) => ({ username: r.username, displayName: r.display_name, blockedAt: r.created_at }));
+  }
+
   // ---------- public trader profile ----------
-  async function publicProfile(username) {
+  async function publicProfile(username, viewerId = null) {
     const u = await db.one(
       "SELECT id, username, display_name, kyc_tier, created_at FROM users WHERE lower(username) = lower(?) AND role = 'user' AND is_blocked = 0",
       [String(username ?? '')]
     );
     if (!u) throw notFound();
+    const blockedByMe = viewerId
+      ? !!(await db.one('SELECT 1 AS x FROM user_blocks WHERE blocker_id = ? AND blocked_id = ?', [viewerId, u.id]))
+      : false;
+    // Someone who blocked the viewer shows no offers to them.
+    const hidden = viewerId ? await blocked(viewerId, u.id) : false;
     const release = await db.one(
       `SELECT percentile_cont(0.5) WITHIN GROUP (ORDER BY closed_at - paid_at) AS ms, COUNT(*) AS n
        FROM trades WHERE seller_id = ? AND status = 'completed' AND resolution = 'released' AND paid_at IS NOT NULL`,
@@ -441,14 +574,16 @@ function createMarket(db, wallet, config, hooks = {}) {
       ...(await stats(u.id)),
       medianReleaseMinutes: release.n && release.ms != null ? Math.max(1, Math.round(release.ms / 60_000)) : null,
       reviews: reviews.map((r) => ({ positive: r.positive, comment: r.comment, createdAt: r.created_at, from: r.rater_was_buyer ? 'buyer' : 'seller' })),
-      offers: await Promise.all(offers.filter((o) => m.fiatFor(o.remaining, o.price) >= o.min_fiat).map(offerView)),
+      offers: hidden ? [] : await Promise.all(offers.filter((o) => m.fiatFor(o.remaining, o.price) >= o.min_fiat).map(offerView)),
+      isMe: viewerId === u.id,
+      blockedByMe,
     };
   }
 
   return {
     OPEN, stats, createOffer, setOfferStatus, listMarket, myOffers, offer,
     openTrade, action, resolveDispute, trade, myTrades, listTrades, messages, postMessage, expireTrades,
-    rate, publicProfile,
+    rate, publicProfile, block, unblock, blocks,
   };
 }
 

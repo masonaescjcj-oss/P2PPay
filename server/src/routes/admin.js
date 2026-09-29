@@ -86,6 +86,7 @@ function adminRoutes(api, ctx) {
   const userView = async (r) => ({
     id: r.id, username: r.username, displayName: r.display_name, phone: r.phone, phoneVerified: !!r.phone_verified_at,
     role: r.role, kycTier: r.kyc_tier, totpEnabled: !!r.totp_enabled_at, blocked: !!r.is_blocked, createdAt: r.created_at,
+    tradeFrozenUntil: r.trade_frozen_until > Date.now() ? r.trade_frozen_until : null,
     available: m.fmtUsdt(r.available), locked: m.fmtUsdt(r.locked), ...(await market.stats(r.id)),
   });
   api.get('/admin/users', perm('users'), async (req, res) => {
@@ -111,6 +112,16 @@ function adminRoutes(api, ctx) {
     await audited(req, req.body.blocked ? 'user_block' : 'user_unblock', 'user', uid, async () => {
       await db.run("UPDATE users SET is_blocked = ? WHERE id = ? AND role = 'user'", [req.body.blocked ? 1 : 0, uid]);
       if (req.body.blocked) await db.run('DELETE FROM sessions WHERE user_id = ?', [uid]);
+    });
+    res.json({ ok: true });
+  });
+  // Lifts an automatic trading pause (e.g. after repeated cancels once the seller's account was shown).
+  api.post('/admin/users/:id/unfreeze', perm('users'), async (req, res) => {
+    const uid = id(req);
+    if (uid === req.user.id) throw forbidden('own_request');
+    await audited(req, 'user_unfreeze', 'user', uid, async () => {
+      const r = await db.run('UPDATE users SET trade_frozen_until = 0 WHERE id = ?', [uid]);
+      if (!r.rowCount) throw notFound();
     });
     res.json({ ok: true });
   });

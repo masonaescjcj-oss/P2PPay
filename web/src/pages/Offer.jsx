@@ -46,6 +46,10 @@ export default function Offer() {
 
   const outOfRange = calc && (calc.fiatAmt < toNum(o.minFiat) || calc.fiatAmt > toNum(o.maxFiat))
   const needsAccount = user && !visitorBuys && accounts.data && !accounts.data.some((a) => a.method === chosen)
+  const req = o.requirements || {}
+  const hasReq = req.requireAccept || req.minTrades > 0 || req.minAccountDays > 0 || req.requireId
+  const verifyHelps = (/limit|kyc|counterparty/.test(errCode || '') && errCode !== 'new_account_limit') ||
+    (errCode === 'requirements_not_met' && req.requireId)
   const quick = [toNum(o.minFiat), Math.round((toNum(o.minFiat) + toNum(o.maxFiat)) / 2), toNum(o.maxFiat)]
 
   async function submit() {
@@ -86,6 +90,14 @@ export default function Offer() {
           <div className="stat"><span>{t('payWindow')}</span><span>{t('minutes', { n: o.paymentWindow })}</span></div>
           <div className="stat"><span>{t('completion')}</span><span className="num">{o.maker.completionRate ?? '—'}{o.maker.completionRate !== null ? '%' : ''}</span></div>
         </div>
+        {hasReq && (
+          <div className="req-chips" aria-label={t('safetyTitle')}>
+            {req.requireAccept && <span className="pill accent"><Icon name="shieldCheck" size={13} stroke={2} />{t('reqAccept')}</span>}
+            {req.minTrades > 0 && <span className="pill neutral">{t('reqMinTrades', { n: req.minTrades })}</span>}
+            {req.minAccountDays > 0 && <span className="pill neutral">{t('reqMinDays', { n: req.minAccountDays })}</span>}
+            {req.requireId && <span className="pill neutral"><Icon name="check" size={12} stroke={2.4} />{t('reqId')}</span>}
+          </div>
+        )}
       </section>
 
       <section className="stack" style={{ gap: 10 }}>
@@ -161,10 +173,16 @@ export default function Offer() {
           <span>{t('escrowNote')}</span>
         </div>
       )}
+      {visitorBuys && req.requireAccept && (
+        <div className="note accent">
+          <Icon name="clock" size={20} />
+          <span>{t('reqAcceptNote', { n: config?.acceptWindowMin ?? 10 })}</span>
+        </div>
+      )}
 
       {error && (
         <p className="error-text" role="alert">
-          {error} {/limit|kyc|counterparty/.test(errCode || '') && <Link to="/profile/verification">{t('goVerify')}</Link>}
+          {error} {verifyHelps && <Link to="/profile/verification">{t('goVerify')}</Link>}
         </p>
       )}
 
@@ -172,7 +190,9 @@ export default function Offer() {
         <button type="button" className={`btn ${visitorBuys ? 'btn-buy' : 'btn-sell'}`} disabled={busy || (user && (!calc || outOfRange || needsAccount))} onClick={submit}>
           {!user
             ? t('loginToTrade')
-            : visitorBuys
+            : visitorBuys && req.requireAccept
+              ? t('sendRequest')
+              : visitorBuys
               ? t('buyAmount', { v: calc ? usdt(String(calc.net)) : '' })
               : t('sellAmount', { v: calc ? usdt(String(calc.usdtAmt)) : '' })}
         </button>

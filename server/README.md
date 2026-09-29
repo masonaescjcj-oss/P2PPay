@@ -63,7 +63,8 @@ Errors are `{"error": "<code>"}` with an HTTP status; the web app maps codes to 
 | KYC tiers | 0 = registered (deposit only), 1 = phone verified, 2 = tazkira/passport + selfie approved by staff, 3 = merchant. Each tier has a rolling 24h limit for trade volume (checked for **both** sides of a trade) and withdrawals (`LIMIT_TIER*_MICRO`). Posting offers needs tier 1. |
 | KYC documents | `POST /kyc/submission` → upload `front`, `back` (optional), `selfie` as raw images (JPEG/PNG/WebP, magic bytes checked, ≤ 5 MB; the web app downsizes photos) → `POST /kyc/submission/:id/submit`. Files are AES-256-GCM encrypted in `KYC_DIR`; staff view them through `GET /admin/kyc/:id/files/:kind` only. |
 | Staff roles | `admin` (everything, incl. staff management), `finance` (deposits, withdrawals, hot wallet, audit log), `support` (disputes, users, KYC, alerts, beta: invites, feedback, error reports). With `REQUIRE_STAFF_2FA=1` (default) staff must have 2FA on. Nobody can review their own request or change their own role; role changes sign the user out. |
-| Alerts | Rules raise one open alert per user and rule: `pass_through` (deposit leaves again within 2h without trading), `shared_address` (withdrawal address used by another account), `large_trade`, `many_cancels`, `many_disputes`, `auth_failures`. Staff close them with a note; every staff decision is in the audit log. |
+| Alerts | Rules raise one open alert per user and rule: `pass_through` (deposit leaves again within 2h without trading), `shared_address` (withdrawal address used by another account), `large_trade`, `many_cancels`, `many_disputes`, `auth_failures`, `reveal_abuse` (see below). Staff close them with a note; every staff decision is in the audit log. |
+| Seller safety | Against fake accounts that open trades only to learn sellers' payment accounts: the buyer sees the account only while a payment is due (`paymentAccount` is `null` before acceptance and after the trade ends); sell offers can require seller approval (`awaitingAccept`, the seller sees a `counterparty` summary); offers can set `minTrades`, `minAccountDays`, `requireId`; `REVEAL_CANCEL_LIMIT` cancels/expiries after seeing an account within 24h pause the buyer's trading for `TRADE_FREEZE_DAYS` (`trading_paused`, alert `reveal_abuse`, lifted with `POST /admin/users/:id/unfreeze`); accounts younger than `NEW_ACCOUNT_DAYS` with fewer than `NEW_ACCOUNT_TRADES` trades are capped at `NEW_ACCOUNT_MAX_TRADE_MICRO` per trade; users can block each other. |
 | Data key | `DATA_ENCRYPTION_KEY` (required in production) encrypts TOTP secrets and KYC files and keys the code HMACs. Back it up: without it those records cannot be read. |
 
 ## Endpoints (`/api`)
@@ -84,7 +85,9 @@ Errors are `{"error": "<code>"}` with an HTTP status; the web app maps codes to 
 | GET | `/push/key` | public | VAPID public key (null = push off) |
 | POST | `/push/subscribe`, `/push/unsubscribe` | user | a browser PushSubscription + `lang` / `endpoint` |
 | POST | `/trades/:id/rate` | trade party | `positive: bool, comment?` — once, after completion |
-| GET | `/users/:username` | public | trader profile: stats, ratings, median release time, reviews, active offers |
+| GET | `/users/:username` | public | trader profile: stats, ratings, median release time, reviews, active offers (+ `blockedByMe`, `isMe` when signed in) |
+| POST | `/users/:username/block`, `/users/:username/unblock` | user | blocked pairs don't see each other's offers and can't open trades together |
+| GET | `/me/blocks` | user | users I blocked |
 | GET | `/me/security` | user | phone, 2FA, backup codes left, recent security events |
 | POST | `/me/phone`, `/me/phone/verify` | user | `phone` / `code` |
 | POST | `/me/totp/setup`, `/me/totp/enable`, `/me/totp/disable`, `/me/totp/backup-codes` | user | – / `code` |
@@ -103,12 +106,13 @@ Errors are `{"error": "<code>"}` with an HTTP status; the web app maps codes to 
 | GET | `/offers` | public | `side=buy\|sell` (visitor's side), `paymentMethod?`, `fiat?` |
 | GET | `/offers/mine` | user | – |
 | GET | `/offers/:id` | public | – |
-| POST | `/offers` | user | `side, price, total, minFiat, maxFiat, paymentMethods[], terms?, paymentWindow?` |
+| POST | `/offers` | user | `side, price, total, minFiat, maxFiat, paymentMethods[], terms?, paymentWindow?, requireAccept?` (sell offers; default `OFFER_REQUIRE_ACCEPT_DEFAULT`), `minTrades?, minAccountDays?, requireId?` (who may take it) |
 | POST | `/offers/:id/status` | owner | `status=active\|paused\|closed` |
 | POST | `/offers/:id/trades` | user | `amount` (USDT) **or** `fiat` (AFN), `paymentMethod?` |
 | GET | `/trades` | user | – |
 | GET | `/trades/:id` | party | – |
-| POST | `/trades/:id/pay` | buyer | – |
+| POST | `/trades/:id/accept`, `/trades/:id/decline` | seller | approve or refuse a buy request (offers with `requireAccept`); the payment timer starts on accept |
+| POST | `/trades/:id/pay` | buyer | – (after the seller accepted) |
 | POST | `/trades/:id/release` | seller | – |
 | POST | `/trades/:id/cancel` | buyer | – |
 | POST | `/trades/:id/dispute` | party | `reason` |
@@ -123,6 +127,7 @@ Errors are `{"error": "<code>"}` with an HTTP status; the web app maps codes to 
 | POST | `/admin/trades/:id/resolve` | admin | `winner=buyer\|seller, note?` |
 | GET | `/admin/users` | users | `q?` |
 | POST | `/admin/users/:id/block` | users | `blocked` |
+| POST | `/admin/users/:id/unfreeze` | users | – lift an automatic trading pause (`tradeFrozenUntil` in the user list) |
 | POST | `/admin/users/:id/tier` | kyc | `tier` |
 | POST | `/admin/users/:id/role` | staff | `role=user\|support\|finance\|admin` |
 | GET | `/admin/kyc`, `/admin/kyc/:id/files/:kind` | kyc | `status?` |

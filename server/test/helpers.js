@@ -53,7 +53,10 @@ async function setup(overrides = {}, deps = {}) {
   const config = {
     ...baseConfig, databaseUrl: database.url, pgliteDir: ':memory:', dataKey: '', storage: { provider: 'local' },
     adminUsername: 'admin', adminPassword: 'adminpass123', tradeFeeBps: 10,
-    otpResendMs: 0, kycDir, ...overrides,
+    otpResendMs: 0, kycDir,
+    // Older suites expect instant trades; test/safety.test.js turns these protections on.
+    safety: { ...baseConfig.safety, requireAcceptByDefault: false, newAccountMaxMicro: 0, revealCancelLimit: 0 },
+    ...overrides,
   };
   const sms = deps.sms || fakeSms();
   const app = await createApp(config, { ...deps, sms, log: deps.log || quietLog });

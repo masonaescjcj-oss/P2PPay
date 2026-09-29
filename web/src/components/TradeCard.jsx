@@ -6,6 +6,7 @@ import Icon from './Icon.jsx'
 
 export function statusText(t, trade) {
   const s = trade.status
+  if (trade.awaitingAccept) return t(trade.role === 'buyer' ? 'st_awaiting_buyer' : 'st_awaiting_seller')
   if (s === 'pending_payment' && trade.role === 'buyer') return t('st_pending_payment_buyer')
   if (s === 'paid' && trade.role === 'seller') return t('st_paid_seller')
   return t(`st_${s}`)

@@ -10,6 +10,9 @@ import { usePush } from '../lib/push.js'
 
 const LOOK = {
   trade_opened: ['accent', 'swap'],
+  trade_request: ['gold', 'user'],
+  trade_accepted: ['green', 'check'],
+  trade_declined: ['neutral', 'x'],
   trade_paid: ['gold', 'check'],
   trade_released: ['green', 'check'],
   trade_cancelled: ['neutral', 'x'],

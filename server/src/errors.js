@@ -11,8 +11,8 @@ class ApiError extends Error {
 }
 
 const bad = (code, msg, details) => new ApiError(400, code, msg, details);
-const forbidden = (code = 'forbidden') => new ApiError(403, code);
+const forbidden = (code = 'forbidden', details) => new ApiError(403, code, null, details);
 const notFound = (code = 'not_found') => new ApiError(404, code);
-const conflict = (code, msg) => new ApiError(409, code, msg);
+const conflict = (code, msg, details) => new ApiError(409, code, msg, details);
 
 module.exports = { ApiError, bad, forbidden, notFound, conflict };

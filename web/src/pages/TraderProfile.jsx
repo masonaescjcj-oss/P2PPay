@@ -1,17 +1,39 @@
+import { useState } from 'react'
 import { useParams } from 'react-router-dom'
 import Icon from '../components/Icon.jsx'
-import { Empty, Loading, TopBar } from '../components/Layout.jsx'
+import { Empty, Loading, Toast, TopBar } from '../components/Layout.jsx'
 import OfferCard from '../components/OfferCard.jsx'
+import Sheet from '../components/Sheet.jsx'
+import { api } from '../lib/api.js'
+import { useAuth } from '../lib/auth.jsx'
 import { dateOf, initial } from '../lib/format.js'
-import { useApi } from '../lib/hooks.js'
+import { useApi, useToast } from '../lib/hooks.js'
 import { usePrefs } from '../lib/prefs.jsx'
 
 // Public page of a trader: what a counterparty wants to know before trading.
 export default function TraderProfile() {
   const { username } = useParams()
   const { t, lang, errText } = usePrefs()
+  const { user } = useAuth()
   const p = useApi(`/users/${encodeURIComponent(username)}`)
+  const [toast, showToast] = useToast()
+  const [confirm, setConfirm] = useState(false)
+  const [busy, setBusy] = useState(false)
   const d = p.data
+
+  async function setBlocked(on) {
+    setBusy(true)
+    try {
+      await api.post(`/users/${encodeURIComponent(d.username)}/${on ? 'block' : 'unblock'}`)
+      showToast(t(on ? 'blockedToast' : 'unblockedToast'))
+      setConfirm(false)
+      p.reload()
+    } catch (err) {
+      showToast(errText(err))
+    } finally {
+      setBusy(false)
+    }
+  }
   if (p.loading) return <main className="page"><Loading /></main>
   if (!d) return <main className="page"><TopBar title={t('traderProfile')} /><p className="error-text">{errText(p.error)}</p></main>
   const since = dateOf(d.memberSince, lang, { year: 'numeric', month: 'long' })
@@ -70,6 +92,28 @@ export default function TraderProfile() {
           </div>
         )}
       </section>
+
+      {user && !d.isMe && (
+        d.blockedByMe ? (
+          <div className="note coral" style={{ alignItems: 'center' }}>
+            <Icon name="x" size={18} />
+            <span className="grow">{t('blockedNote')}</span>
+            <button type="button" className="btn btn-secondary btn-sm" disabled={busy} onClick={() => setBlocked(false)}>{t('unblockUser')}</button>
+          </div>
+        ) : (
+          <button type="button" className="btn-link" style={{ color: 'var(--coral-text)', textAlign: 'center' }} onClick={() => setConfirm(true)}>
+            {t('blockUser')}
+          </button>
+        )
+      )}
+      {confirm && (
+        <Sheet title={t('blockUser')} onClose={() => setConfirm(false)}>
+          <p style={{ fontSize: 14, lineHeight: 1.9 }}>{t('blockConfirm')}</p>
+          <button type="button" className="btn btn-sell" disabled={busy} onClick={() => setBlocked(true)}>{t('blockUser')}</button>
+          <button type="button" className="btn btn-secondary" onClick={() => setConfirm(false)}>{t('cancel')}</button>
+        </Sheet>
+      )}
+      <Toast msg={toast} />
     </main>
   )
 }

@@ -84,6 +84,20 @@ module.exports = {
   },
   alertLargeTradeMicro: int('ALERT_LARGE_TRADE_MICRO', 5_000_000_000),
 
+  // Protection against fake accounts collecting sellers' payment accounts.
+  safety: {
+    // New sell offers ask the seller to approve each buyer before the account is shown.
+    requireAcceptByDefault: process.env.OFFER_REQUIRE_ACCEPT_DEFAULT !== '0',
+    acceptWindowMin: int('ACCEPT_WINDOW_MIN', 10),
+    // Cancels (or expiries) after seeing a seller's account, per rolling 24h, before trading pauses.
+    revealCancelLimit: int('REVEAL_CANCEL_LIMIT', 3),
+    freezeDays: int('TRADE_FREEZE_DAYS', 7),
+    // New accounts (younger than N days and fewer than M completed trades) trade small amounts only.
+    newAccountDays: int('NEW_ACCOUNT_DAYS', 7),
+    newAccountTrades: int('NEW_ACCOUNT_TRADES', 3),
+    newAccountMaxMicro: int('NEW_ACCOUNT_MAX_TRADE_MICRO', 50_000_000),
+  },
+
   // Web Push (phone notifications). Generate once: npx web-push generate-vapid-keys
   push: {
     publicKey: process.env.VAPID_PUBLIC_KEY || '',

@@ -3,12 +3,12 @@ import { useOutletContext } from 'react-router-dom'
 import { Empty, Loading } from '../../components/Layout.jsx'
 import { api } from '../../lib/api.js'
 import { useAuth } from '../../lib/auth.jsx'
-import { initial, usdt } from '../../lib/format.js'
+import { dateOf, initial, usdt } from '../../lib/format.js'
 import { useApi } from '../../lib/hooks.js'
 import { usePrefs } from '../../lib/prefs.jsx'
 
 export default function AdminUsers() {
-  const { t, errText } = usePrefs()
+  const { t, lang, errText } = usePrefs()
   const { user: me } = useAuth()
   const { perms } = useOutletContext()
   const [q, setQ] = useState('')
@@ -64,6 +64,7 @@ export default function AdminUsers() {
                     <span className="pill neutral">{t('tier', { n: u.kycTier })}</span>
                     {u.totpEnabled && <span className="pill green">2FA</span>}
                     {u.blocked && <span className="pill coral">{t('blocked')}</span>}
+                    {u.tradeFrozenUntil && <span className="pill gold">{t('frozenUntil', { d: dateOf(u.tradeFrozenUntil, lang, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) })}</span>}
                   </strong>
                   <span className="caption" dir="ltr" style={{ textAlign: 'start' }}>@{u.username}{u.phone ? ` · ${u.phone}` : ''}</span>
                 </div>
@@ -92,6 +93,11 @@ export default function AdminUsers() {
                     </label>
                   )}
                 </div>
+              )}
+              {u.tradeFrozenUntil && u.id !== me.id && (
+                <button type="button" className="btn btn-secondary btn-sm" style={{ height: 36, alignSelf: 'flex-start' }} onClick={() => set(`/admin/users/${u.id}/unfreeze`, {})}>
+                  {t('unfreeze')}
+                </button>
               )}
               <div className="between">
                 <span className="caption">{t('joined')}: <span className="num">{new Date(u.createdAt).toISOString().slice(0, 10)}</span></span>

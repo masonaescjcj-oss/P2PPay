@@ -8,7 +8,7 @@ const { bad } = require('./errors');
 
 // Kinds that also go to the user's phone.
 const PUSH_KINDS = new Set([
-  'trade_opened', 'trade_paid', 'trade_released', 'trade_cancelled', 'trade_disputed', 'trade_resolved',
+  'trade_opened', 'trade_request', 'trade_accepted', 'trade_declined', 'trade_paid', 'trade_released', 'trade_cancelled', 'trade_disputed', 'trade_resolved',
   'trade_message', 'deposit_credited', 'withdrawal_sent', 'withdrawal_rejected', 'kyc_approved', 'kyc_rejected',
 ]);
 
@@ -16,6 +16,9 @@ const PUSH_KINDS = new Set([
 const TEXT = {
   fa: {
     trade_opened: ['معاملهٔ جدید', 'کسی روی آگهی شما معامله‌ای به مقدار {amount} تتر باز کرد.'],
+    trade_request: ['درخواست معامله', 'کسی می‌خواهد {amount} تتر از شما بخرد. بررسی کنید و بپذیرید یا رد کنید.'],
+    trade_accepted: ['فروشنده پذیرفت', 'حالا پول را بپردازید و «پرداخت کردم» را بزنید.'],
+    trade_declined: ['درخواست رد شد', 'فروشنده این معامله را نپذیرفت. آگهی دیگری را امتحان کنید.'],
     trade_paid: ['خریدار پرداخت کرد', 'حساب خود را بررسی کنید و اگر پول رسیده، تتر را آزاد کنید.'],
     trade_released: ['تتر آزاد شد', '{amount} تتر به کیف پول شما اضافه شد.'],
     trade_cancelled: ['معامله لغو شد', 'معاملهٔ #{tradeId} لغو شد.'],
@@ -30,6 +33,9 @@ const TEXT = {
   },
   en: {
     trade_opened: ['New trade', 'Someone opened a {amount} USDT trade on your offer.'],
+    trade_request: ['Trade request', 'Someone wants to buy {amount} USDT from you. Review and accept or decline.'],
+    trade_accepted: ['Seller accepted', 'Now send the payment and tap “I have paid”.'],
+    trade_declined: ['Request declined', 'The seller did not accept this trade. Try another offer.'],
     trade_paid: ['Buyer has paid', 'Check your account and release the USDT if the money arrived.'],
     trade_released: ['USDT released', '{amount} USDT was added to your wallet.'],
     trade_cancelled: ['Trade cancelled', 'Trade #{tradeId} was cancelled.'],

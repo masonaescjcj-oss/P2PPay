@@ -4,7 +4,7 @@ import Icon from '../components/Icon.jsx'
 import { Loading, Toast, TopBar } from '../components/Layout.jsx'
 import Sheet from '../components/Sheet.jsx'
 import { api } from '../lib/api.js'
-import { afn, clock, rate, usdt } from '../lib/format.js'
+import { afn, clock, dateOf, rate, usdt } from '../lib/format.js'
 import { copyText, useApi, useNow, useToast } from '../lib/hooks.js'
 import { usePrefs } from '../lib/prefs.jsx'
 
@@ -44,6 +44,32 @@ function Ring({ left, total }) {
         {clock(left)}
       </div>
     </div>
+  )
+}
+
+// What the seller sees about a buyer before accepting a request.
+function PartyCard({ party, now }) {
+  const { t, lang } = usePrefs()
+  const isNew = now - party.memberSince < 7 * 86_400_000
+  return (
+    <section className="card stack party-card" style={{ gap: 12 }}>
+      <div className="between">
+        <span className="label">{t('aboutBuyer')}</span>
+        <Link to={`/u/${party.username}`} dir="ltr" className="caption">@{party.username}</Link>
+      </div>
+      <div className="req-chips">
+        {party.idVerified
+          ? <span className="pill green"><Icon name="check" size={12} stroke={2.4} />{t('verified')}</span>
+          : <span className="pill neutral">{t('idNotVerified')}</span>}
+        {isNew && <span className="pill gold">{t('newAccount')}</span>}
+        <span className="pill neutral">{t('memberSince', { d: dateOf(party.memberSince, lang, { year: 'numeric', month: 'long', day: 'numeric' }) })}</span>
+      </div>
+      <div className="grid-3" style={{ gap: 8 }}>
+        <div className="stat"><span>{t('memberTrades')}</span><span className="num">{party.completed}</span></div>
+        <div className="stat"><span>{t('completionRate')}</span><span className="num">{party.completionRate != null ? `${party.completionRate}%` : '—'}</span></div>
+        <div className="stat"><span>{t('positiveRatings')}</span><span className="num t-green">{party.ratings.positivePct != null ? `${party.ratings.positivePct}%` : '—'}</span></div>
+      </div>
+    </section>
   )
 }
 
@@ -165,8 +191,10 @@ export default function Trade() {
 
   const isBuyer = tr.role === 'buyer'
   const other = isBuyer ? tr.seller : tr.buyer
+  const awaiting = tr.awaitingAccept
   const left = tr.expiresAt - now
-  const windowMs = tr.expiresAt - tr.createdAt
+  // The payment timer starts when the seller accepts (or at once for offers without approval).
+  const windowMs = tr.expiresAt - (tr.acceptedAt || tr.createdAt)
 
   async function act(action, body) {
     setBusy(true)
@@ -184,8 +212,24 @@ export default function Trade() {
 
   const copy = async (v) => showToast((await copyText(v)) ? t('copied') : v)
 
+  async function declineAndBlock() {
+    setBusy(true)
+    setError(null)
+    try {
+      await api.post(`/users/${encodeURIComponent(other.username)}/block`)
+      trade.setData(await api.post(`/trades/${id}/decline`))
+      setSheet(null)
+    } catch (err) {
+      setError(errText(err))
+      trade.reload()
+    } finally {
+      setBusy(false)
+    }
+  }
+
   let head
-  if (tr.status === 'pending_payment') head = isBuyer ? [t('payNow'), t('payNowSub')] : [t('waitBuyer'), t('waitBuyerSub')]
+  if (awaiting) head = isBuyer ? [t('waitAccept'), t('waitAcceptSub')] : [t('reviewBuyer'), t('reviewBuyerSub')]
+  else if (tr.status === 'pending_payment') head = isBuyer ? [t('payNow'), t('payNowSub')] : [t('waitBuyer'), t('waitBuyerSub')]
   else if (tr.status === 'paid') head = isBuyer ? [t('waitSeller'), t('waitSellerSub')] : [t('checkPayment'), t('checkPaymentSub')]
   else head = [t('disputed'), t('disputedSub')]
 
@@ -210,6 +254,8 @@ export default function Trade() {
       </section>
 
       <Steps trade={tr} />
+
+      {awaiting && !isBuyer && tr.counterparty && <PartyCard party={tr.counterparty} now={now} />}
 
       <section className="card stack" style={{ gap: 10 }}>
         <div className="between">
@@ -244,6 +290,8 @@ export default function Trade() {
               </span>
             </div>
           </>
+        ) : awaiting ? (
+          <div className="kv"><span className="row" style={{ gap: 8, color: 'var(--muted)' }}><Icon name="lock" size={16} />{t('accountAfterAccept')}</span><span /></div>
         ) : (
           <div className="kv"><span className="muted" style={{ color: 'var(--muted)' }}>{t('noAccountInfo')}</span><span /></div>
         )}
@@ -256,15 +304,41 @@ export default function Trade() {
         </section>
       )}
 
-      <div className="note coral">
-        <Icon name="alert" size={20} />
-        <span>{isBuyer ? t('payWarning') : t('releaseWarning')}</span>
-      </div>
+      {awaiting ? (
+        !isBuyer && (
+          <div className="note gold">
+            <Icon name="shield" size={20} />
+            <span>{t('acceptTip')}</span>
+          </div>
+        )
+      ) : (
+        <div className="note coral">
+          <Icon name="alert" size={20} />
+          <span>{isBuyer ? t('payWarning') : t('releaseWarning')}</span>
+        </div>
+      )}
 
       {error && <p className="error-text" role="alert">{error}</p>}
 
       <div className="stack push-end" style={{ gap: 10 }}>
-        {isBuyer && tr.status === 'pending_payment' && (
+        {awaiting && !isBuyer && (
+          <>
+            <div className="row">
+              <button type="button" className="btn btn-primary grow" disabled={busy} onClick={() => act('accept')}>
+                <Icon name="check" stroke={2.2} />
+                {t('acceptBuyer')}
+              </button>
+              <button type="button" className="btn btn-secondary nowrap" style={{ width: 'auto', paddingInline: 18 }} disabled={busy} onClick={() => act('decline')}>{t('declineBuyer')}</button>
+            </div>
+            <button type="button" className="btn-link" style={{ color: 'var(--coral-text)', textAlign: 'center' }} onClick={() => setSheet('block')}>
+              {t('declineBlock')}
+            </button>
+          </>
+        )}
+        {awaiting && isBuyer && (
+          <button type="button" className="btn btn-secondary" disabled={busy} onClick={() => setSheet('cancel')}>{t('cancelOrder')}</button>
+        )}
+        {!awaiting && isBuyer && tr.status === 'pending_payment' && (
           <div className="row">
             <button type="button" className="btn btn-primary grow" disabled={busy} onClick={() => act('pay')}>
               <Icon name="check" stroke={2.2} />
@@ -273,7 +347,7 @@ export default function Trade() {
             <button type="button" className="btn btn-danger nowrap" style={{ width: 'auto', paddingInline: 16 }} disabled={busy} onClick={() => setSheet('cancel')}>{t('cancelOrder')}</button>
           </div>
         )}
-        {!isBuyer && (tr.status === 'paid' || tr.status === 'pending_payment') && (
+        {!awaiting && !isBuyer && (tr.status === 'paid' || tr.status === 'pending_payment') && (
           <button type="button" className={`btn ${tr.status === 'paid' ? 'btn-primary' : 'btn-secondary'}`} disabled={busy} onClick={() => setSheet('release')}>
             {t('release')}
           </button>
@@ -292,6 +366,14 @@ export default function Trade() {
         <Sheet title={t('release')} onClose={() => setSheet(null)}>
           <p style={{ fontSize: 14, lineHeight: 1.9 }}>{t('confirmRelease', { v: afn(tr.fiat) })}</p>
           <button type="button" className="btn btn-primary" disabled={busy} onClick={() => act('release')}>{t('confirm')}</button>
+          <button type="button" className="btn btn-secondary" onClick={() => setSheet(null)}>{t('cancel')}</button>
+        </Sheet>
+      )}
+      {sheet === 'block' && (
+        <Sheet title={t('declineBlock')} onClose={() => setSheet(null)}>
+          <p style={{ fontSize: 14, lineHeight: 1.9 }}>{t('confirmDeclineBlock')}</p>
+          {error && <p className="error-text" role="alert">{error}</p>}
+          <button type="button" className="btn btn-sell" disabled={busy} onClick={declineAndBlock}>{t('declineBlock')}</button>
           <button type="button" className="btn btn-secondary" onClick={() => setSheet(null)}>{t('cancel')}</button>
         </Sheet>
       )}
