@@ -57,6 +57,13 @@ export default function Profile() {
           <div className="stat card" style={{ padding: 12 }}><span>{t('myPaymentAccounts')}</span><span className="num" style={{ fontSize: 18 }}>{accounts.data?.length ?? 0}</span></div>
         </div>
 
+        {user.role === 'admin' && (
+          <Link to="/admin" className="btn btn-secondary" style={{ color: 'var(--gold-text)' }}>
+            <Icon name="settings" size={18} />
+            {t('adminPanel')}
+          </Link>
+        )}
+
         <section className="card flush">
           <Row icon="grid" tone="gold" label={t('myOffers')} to="/orders?tab=offers" />
           <Row icon="card" tone="blue" label={t('myPaymentAccounts')} value={accounts.data?.map((a) => pm(a.method)).join('، ')} to="/profile/accounts" />

@@ -95,17 +95,23 @@ export default function Chat() {
         {msgs.length === 0 && <p className="caption" style={{ textAlign: 'center', padding: 24 }}>{t('noMessages')}</p>}
         {msgs.map((m) => {
           if (m.userId === null) {
-            const key = m.body.startsWith('admin: ') ? null : `sys_${m.body}`
+            const fromAdmin = m.body.startsWith('admin: ')
             return (
-              <div key={m.id} className="sys-msg">
-                {key ? t(key) : m.body}
+              <div key={m.id} className="sys-msg" style={fromAdmin ? { background: 'var(--gold-tint-2)', borderColor: 'var(--gold-tint-line)', color: 'var(--gold-tint-text)' } : undefined}>
+                {fromAdmin ? <><strong>{t('support')}:</strong> {m.body.slice(7)}</> : t(`sys_${m.body}`)}
               </div>
             )
           }
           const mine = m.userId === user.id
           return (
             <div key={m.id} className={`bubble ${mine ? 'me' : 'them'}`}>
-              <div className="b">{m.body}</div>
+              {m.fromAdmin && !mine && (
+                <span className="caption strong t-gold row" style={{ gap: 4 }}>
+                  <Icon name="shieldCheck" size={13} stroke={2} />
+                  {t('support')}
+                </span>
+              )}
+              <div className="b" style={m.fromAdmin && !mine ? { border: '1px solid var(--gold-tint-line)' } : undefined}>{m.body}</div>
               <span className="time num">{timeOf(m.createdAt, lang)}</span>
             </div>
           )

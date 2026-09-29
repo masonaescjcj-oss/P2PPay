@@ -1115,3 +1115,82 @@ textarea::placeholder {
 .nowrap {
   white-space: nowrap;
 }
+
+/* ---------- admin ---------- */
+.shell.wide {
+  max-width: 1040px;
+}
+.admin-nav {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.admin-nav a {
+  flex-shrink: 0;
+  height: 38px;
+  padding: 0 14px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.admin-nav a[aria-current='page'] {
+  border-color: var(--gold-line);
+  background: var(--gold-tint);
+  color: var(--gold-text);
+  font-weight: 700;
+}
+.admin-nav .badge {
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 10px;
+  background: var(--coral);
+  color: var(--on-coral);
+  font-size: 11px;
+  font-weight: 800;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 12px;
+}
+.tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 10px;
+}
+.tile {
+  border-radius: 18px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  color: var(--text);
+}
+.tile .v {
+  font-size: 26px;
+  font-weight: 800;
+}
+.tile.alert {
+  border-color: var(--coral-tint-line);
+  background: var(--coral-tint-2);
+}
+.mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+  direction: ltr;
+  unicode-bidi: isolate;
+  word-break: break-all;
+}

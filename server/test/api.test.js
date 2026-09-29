@@ -329,3 +329,57 @@ test('state-changing requests require JSON (CSRF guard)', async (t) => {
   assert.equal(res.status, 400);
   assert.equal((await res.json()).error, 'json_required');
 });
+
+test('admin: audit log, self-review guards, user search, admin chat', async (t) => {
+  const s = await setup();
+  t.after(s.close);
+  const seller = await s.user('sellerA');
+  const buyer = await s.user('buyerA');
+  await s.fund(seller, '10', 20);
+  await s.account(seller, 'bank');
+
+  // every decision lands in the audit log with the admin and note
+  const d = await seller.post('/deposits', { amount: '3', txid: TXID(21) });
+  await s.admin.post(`/admin/deposits/${d.data.id}/reject`, { note: 'not on chain' });
+  let log = (await s.admin.get('/admin/actions')).data;
+  assert.equal(log[0].action, 'deposit_reject');
+  assert.equal(log[0].admin, 'admin');
+  assert.equal(log[0].note, 'not on chain');
+  assert.equal(log[1].action, 'deposit_approve');
+
+  // a failed decision is rolled back together with its log entry
+  const before = log.length;
+  assert.equal((await s.admin.post(`/admin/deposits/${d.data.id}/approve`, {})).data.error, 'already_reviewed');
+  assert.equal((await s.admin.get('/admin/actions')).data.length, before);
+
+  // admin cannot review their own deposit
+  const own = await s.admin.post('/deposits', { amount: '1', txid: TXID(22) });
+  assert.equal((await s.admin.post(`/admin/deposits/${own.data.id}/approve`, {})).data.error, 'own_request');
+
+  // admin sees the dispute, posts in chat, and resolves it
+  const offer = await seller.post('/offers', {
+    side: 'sell', price: '70', total: '10', minFiat: '70', maxFiat: '700', paymentMethods: ['bank'],
+  });
+  const tr = await buyer.post(`/offers/${offer.data.id}/trades`, { amount: '5' });
+  await buyer.post(`/trades/${tr.data.id}/pay`);
+  await buyer.post(`/trades/${tr.data.id}/dispute`, { reason: 'no release' });
+  assert.equal((await s.admin.get(`/trades/${tr.data.id}`)).data.status, 'disputed');
+  assert.equal((await s.admin.post(`/trades/${tr.data.id}/messages`, { body: 'Please upload the receipt' })).status, 201);
+  const msgs = (await buyer.get(`/trades/${tr.data.id}/messages`)).data;
+  assert.ok(msgs.some((m) => m.fromAdmin && m.body === 'Please upload the receipt'));
+  await s.admin.post(`/admin/trades/${tr.data.id}/resolve`, { winner: 'buyer', note: 'bank statement ok' });
+  log = (await s.admin.get('/admin/actions')).data;
+  assert.equal(log[0].action, 'resolve_buyer');
+  assert.equal(log[0].targetId, tr.data.id);
+
+  // search and block
+  const found = (await s.admin.get('/admin/users?q=buyerA')).data;
+  assert.equal(found.length, 1);
+  assert.equal(found[0].completed, 1);
+  assert.equal((await s.admin.get('/admin/users?q=%25')).data.length, 0);
+  const me = (await s.admin.get('/me')).data;
+  assert.equal((await s.admin.post(`/admin/users/${me.id}/block`, { blocked: true })).data.error, 'cannot_block_self');
+  await s.admin.post(`/admin/users/${found[0].id}/block`, { blocked: true });
+  assert.equal((await s.admin.get('/admin/actions')).data[0].action, 'user_block');
+  assert.equal((await buyer.get('/me')).status, 401);
+});

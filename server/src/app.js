@@ -8,7 +8,7 @@ const { createWallet } = require('./wallet');
 const { createMarket } = require('./market');
 const { createFunds } = require('./funds');
 const { hashPassword, verifyPassword, createAuth, rateLimit } = require('./auth');
-const { ApiError, bad, conflict, notFound } = require('./errors');
+const { ApiError, bad, conflict, forbidden, notFound } = require('./errors');
 const m = require('./money');
 
 function createApp(config) {
@@ -194,39 +194,81 @@ function createApp(config) {
       fees: m.fmtUsdt(fees),
     });
   });
-  api.get('/admin/deposits', admin, (req, res) => res.json(funds.allDeposits(req.query.status || null)));
-  for (const decision of ['approve', 'reject']) {
-    api.post(`/admin/deposits/:id/${decision}`, admin, (req, res) =>
-      res.json(funds.reviewDeposit(id(req), decision === 'approve', req.body))
-    );
-    api.post(`/admin/withdrawals/:id/${decision}`, admin, (req, res) =>
-      res.json(funds.reviewWithdrawal(id(req), decision === 'approve', req.body))
-    );
-  }
-  api.get('/admin/withdrawals', admin, (req, res) => res.json(funds.allWithdrawals(req.query.status || null)));
-  api.get('/admin/trades', admin, (req, res) => res.json(market.listTrades(req.query.status || null)));
-  api.post('/admin/trades/:id/resolve', admin, (req, res) =>
-    res.json(market.resolveDispute(id(req), req.body.winner, req.body.note))
+  // Runs an admin decision and records it in the audit log in the same transaction.
+  const insertAction = db.prepare(
+    'INSERT INTO admin_actions (admin_id, action, target_type, target_id, note, created_at) VALUES (?, ?, ?, ?, ?, ?)'
   );
-  api.get('/admin/users', admin, (_req, res) => {
+  const audited = (req, action, type, targetId, fn) =>
+    db.tx(() => {
+      const out = fn();
+      const note = req.body?.note ? String(req.body.note).slice(0, 500) : null;
+      insertAction.run(req.user.id, action, type, targetId, note, Date.now());
+      return out;
+    });
+
+  api.get('/admin/deposits', admin, (req, res) => res.json(funds.allDeposits(req.query.status || null)));
+  api.get('/admin/withdrawals', admin, (req, res) => res.json(funds.allWithdrawals(req.query.status || null)));
+  for (const decision of ['approve', 'reject']) {
+    api.post(`/admin/deposits/:id/${decision}`, admin, (req, res) => {
+      const did = id(req);
+      res.json(audited(req, `deposit_${decision}`, 'deposit', did, () =>
+        funds.reviewDeposit(did, decision === 'approve', req.body, req.user.id)));
+    });
+    api.post(`/admin/withdrawals/:id/${decision}`, admin, (req, res) => {
+      const wid = id(req);
+      res.json(audited(req, `withdrawal_${decision}`, 'withdrawal', wid, () =>
+        funds.reviewWithdrawal(wid, decision === 'approve', req.body, req.user.id)));
+    });
+  }
+  api.get('/admin/trades', admin, (req, res) => res.json(market.listTrades(req.query.status || null)));
+  api.post('/admin/trades/:id/resolve', admin, (req, res) => {
+    const tid = id(req);
+    res.json(audited(req, `resolve_${req.body.winner}`, 'trade', tid, () =>
+      market.resolveDispute(tid, req.body.winner, req.body.note, req.user.id)));
+  });
+
+  const userView = (r) => ({
+    id: r.id, username: r.username, displayName: r.display_name, phone: r.phone, role: r.role,
+    blocked: !!r.is_blocked, createdAt: r.created_at, available: m.fmtUsdt(r.available), locked: m.fmtUsdt(r.locked),
+    ...market.stats(r.id),
+  });
+  api.get('/admin/users', admin, (req, res) => {
+    const q = String(req.query.q ?? '').trim();
+    const like = `%${q.replace(/[\\%_]/g, (c) => '\\' + c)}%`;
     const rows = db
       .prepare(
         `SELECT u.id, u.username, u.display_name, u.phone, u.role, u.is_blocked, u.created_at,
            COALESCE(b.available,0) available, COALESCE(b.locked,0) locked
-         FROM users u LEFT JOIN balances b ON b.user_id = u.id ORDER BY u.id DESC LIMIT 500`
+         FROM users u LEFT JOIN balances b ON b.user_id = u.id
+         WHERE ? = '' OR u.username LIKE ? ESCAPE '\\' OR u.display_name LIKE ? ESCAPE '\\' OR u.phone LIKE ? ESCAPE '\\'
+         ORDER BY u.id DESC LIMIT 200`
       )
-      .all();
-    res.json(rows.map((r) => ({
-      id: r.id, username: r.username, displayName: r.display_name, phone: r.phone, role: r.role,
-      blocked: !!r.is_blocked, createdAt: r.created_at, available: m.fmtUsdt(r.available), locked: m.fmtUsdt(r.locked),
-    })));
+      .all(q, like, like, like);
+    res.json(rows.map(userView));
   });
   api.post('/admin/users/:id/block', admin, (req, res) => {
     const uid = id(req);
     if (uid === req.user.id) throw bad('cannot_block_self');
-    db.prepare('UPDATE users SET is_blocked = ? WHERE id = ?').run(req.body.blocked ? 1 : 0, uid);
-    if (req.body.blocked) db.prepare('DELETE FROM sessions WHERE user_id = ?').run(uid);
+    const target = db.prepare('SELECT role FROM users WHERE id = ?').get(uid);
+    if (!target) throw notFound();
+    if (target.role === 'admin') throw forbidden('cannot_block_admin');
+    audited(req, req.body.blocked ? 'user_block' : 'user_unblock', 'user', uid, () => {
+      db.prepare('UPDATE users SET is_blocked = ? WHERE id = ?').run(req.body.blocked ? 1 : 0, uid);
+      if (req.body.blocked) db.prepare('DELETE FROM sessions WHERE user_id = ?').run(uid);
+    });
     res.json({ ok: true });
+  });
+  api.get('/admin/actions', admin, (_req, res) => {
+    const rows = db
+      .prepare(
+        `SELECT a.*, u.username AS admin_username FROM admin_actions a JOIN users u ON u.id = a.admin_id
+         ORDER BY a.id DESC LIMIT 200`
+      )
+      .all();
+    res.json(rows.map((r) => ({
+      id: r.id, admin: r.admin_username, action: r.action, targetType: r.target_type, targetId: r.target_id,
+      note: r.note, createdAt: r.created_at,
+    })));
   });
 
   api.use((_req, _res, next) => next(notFound()));

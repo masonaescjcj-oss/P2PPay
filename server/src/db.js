@@ -129,6 +129,18 @@ CREATE TABLE IF NOT EXISTS payment_accounts (
   created_at INTEGER NOT NULL,
   UNIQUE (user_id, method)
 );
+
+-- Every admin decision, for accountability.
+CREATE TABLE IF NOT EXISTS admin_actions (
+  id INTEGER PRIMARY KEY,
+  admin_id INTEGER NOT NULL REFERENCES users(id),
+  action TEXT NOT NULL,
+  target_type TEXT NOT NULL,
+  target_id INTEGER NOT NULL,
+  note TEXT,
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS admin_actions_time ON admin_actions(id DESC);
 `;
 
 function open(dbPath) {

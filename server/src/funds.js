@@ -1,6 +1,6 @@
 'use strict';
 
-const { bad, notFound, conflict } = require('./errors');
+const { bad, forbidden, notFound, conflict } = require('./errors');
 const m = require('./money');
 
 const TRON_ADDRESS = /^T[1-9A-HJ-NP-Za-km-z]{33}$/;
@@ -33,10 +33,11 @@ function createFunds(db, wallet, config) {
     return depView(db.prepare('SELECT * FROM deposits WHERE id = ?').get(lastInsertRowid));
   }
 
-  function reviewDeposit(id, approve, input = {}) {
+  function reviewDeposit(id, approve, input = {}, actorId = null) {
     return db.tx(() => {
       const d = db.prepare('SELECT * FROM deposits WHERE id = ?').get(id);
       if (!d) throw notFound();
+      if (d.user_id === actorId) throw forbidden('own_request');
       if (d.status !== 'pending') throw conflict('already_reviewed');
       // Admin may correct the amount to what actually arrived on-chain.
       const amount = input.amount !== undefined && input.amount !== '' ? m.parseUsdt(input.amount) : d.amount;
@@ -67,10 +68,11 @@ function createFunds(db, wallet, config) {
     });
   }
 
-  function reviewWithdrawal(id, approve, input = {}) {
+  function reviewWithdrawal(id, approve, input = {}, actorId = null) {
     return db.tx(() => {
       const w = db.prepare('SELECT * FROM withdrawals WHERE id = ?').get(id);
       if (!w) throw notFound();
+      if (w.user_id === actorId) throw forbidden('own_request');
       if (w.status !== 'pending') throw conflict('already_reviewed');
       const ref = { type: 'withdrawal', id: w.id };
       let txid = null;

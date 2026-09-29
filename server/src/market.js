@@ -309,10 +309,11 @@ function createMarket(db, wallet, config) {
     });
   }
 
-  function resolveDispute(tradeId, winner, note = '') {
+  function resolveDispute(tradeId, winner, note = '', actorId = null) {
     return db.tx(() => {
       const t = getTrade.get(tradeId);
       if (!t) throw notFound();
+      if (actorId !== null && (t.buyer_id === actorId || t.seller_id === actorId)) throw forbidden('own_request');
       if (t.status !== 'disputed' && t.status !== 'paid') throw conflict('invalid_state');
       if (winner === 'buyer') close(t, 'completed', 'resolved_buyer');
       else if (winner === 'seller') close(t, 'cancelled', 'resolved_seller');
@@ -351,12 +352,12 @@ function createMarket(db, wallet, config) {
     if (!isAdmin) loadForParty(userId, tradeId);
     return db
       .prepare(
-        `SELECT m.id, m.user_id AS userId, u.username, m.body, m.created_at AS createdAt
+        `SELECT m.id, m.user_id AS userId, u.username, u.role = 'admin' AS fromAdmin, m.body, m.created_at AS createdAt
          FROM trade_messages m LEFT JOIN users u ON u.id = m.user_id
          WHERE m.trade_id = ? AND m.id > ? ORDER BY m.id LIMIT 500`
       )
       .all(tradeId, afterId)
-      .map((r) => ({ ...r }));
+      .map((r) => ({ ...r, fromAdmin: !!r.fromAdmin }));
   }
 
   function postMessage(userId, tradeId, body, isAdmin = false) {
