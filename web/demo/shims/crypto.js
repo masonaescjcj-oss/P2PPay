@@ -41,7 +41,9 @@ const createHash = (alg) => hasher((data) => HASHES[alg](data))
 const createHmac = (alg, key) => hasher((data) => hmac(HASHES[alg], bytes(key), data))
 
 // Node's defaults: N = 16384, r = 8, p = 1.
-const scryptSync = (password, salt, keylen) => Buffer.from(scrypt(bytes(password), bytes(salt), { N: 16384, r: 8, p: 1, dkLen: keylen }))
+// The test version runs in the page, where scrypt is plain JavaScript: N=16384 takes half a minute on a
+// phone. Test accounts use a light N (the real server keeps Node's default, N=16384).
+const scryptSync = (password, salt, keylen) => Buffer.from(scrypt(bytes(password), bytes(salt), { N: 1024, r: 8, p: 1, dkLen: keylen }))
 
 function timingSafeEqual(a, b) {
   if (a.length !== b.length) throw new RangeError('Input buffers must have the same byte length')
