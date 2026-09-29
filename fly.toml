@@ -1,0 +1,49 @@
+# Fly.io — API + web app in Mumbai (bom), next to a Supabase project in ap-south-1 (Mumbai).
+# Secrets (never in this file): fly secrets set DATABASE_URL=… DATA_ENCRYPTION_KEY=… (see DEPLOY.md)
+app = "p2ppay"
+primary_region = "bom"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[deploy]
+  # Schema first: the new version only goes live after its migrations are applied.
+  release_command = "node src/tools/migrate.js"
+  strategy = "rolling"
+
+[env]
+  NODE_ENV = "production"
+  PORT = "8080"
+  COOKIE_SECURE = "1"
+  TRUST_PROXY = "1"
+  MIGRATE_ON_START = "0"
+  STORAGE_PROVIDER = "supabase"
+  KYC_BUCKET = "kyc"
+  SMS_PROVIDER = "twilio"
+  REQUIRE_STAFF_2FA = "1"
+  # nile (testnet) until the beta is signed off; mainnet also needs TRON_MAINNET_CONFIRM=yes
+  TRON_NETWORK = "nile"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  # The chain loop (deposits, withdrawals, sweeps) must keep running: never scale to zero.
+  auto_stop_machines = "off"
+  auto_start_machines = true
+  min_machines_running = 1
+
+  [http_service.concurrency]
+    type = "requests"
+    soft_limit = 200
+    hard_limit = 250
+
+  [[http_service.checks]]
+    grace_period = "20s"
+    interval = "15s"
+    timeout = "5s"
+    method = "GET"
+    path = "/api/health"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"

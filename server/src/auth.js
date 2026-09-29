@@ -31,12 +31,13 @@ function createAuth(db, config) {
   const COOKIE = 'p2ppay_session';
   const ttl = config.sessionDays * 86400_000;
 
-  const insertSession = db.prepare('INSERT INTO sessions (token, user_id, expires_at) VALUES (?, ?, ?)');
-  const findSession = db.prepare(
-    `SELECT u.id, u.username, u.display_name, u.role, u.is_blocked, u.kyc_tier, u.totp_enabled_at, s.expires_at
-     FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token = ?`
-  );
-  const deleteSession = db.prepare('DELETE FROM sessions WHERE token = ?');
+  const findSession = (token) =>
+    db.one(
+      `SELECT u.id, u.username, u.display_name, u.role, u.is_blocked, u.kyc_tier, u.totp_enabled_at, s.expires_at
+       FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token = ?`,
+      [token]
+    );
+  const deleteSession = (token) => db.run('DELETE FROM sessions WHERE token = ?', [token]);
 
   function cookieHeader(token, maxAgeSec) {
     const parts = [`${COOKIE}=${token}`, 'Path=/', 'HttpOnly', 'SameSite=Strict', `Max-Age=${maxAgeSec}`];
@@ -44,34 +45,38 @@ function createAuth(db, config) {
     return parts.join('; ');
   }
 
-  function login(res, userId) {
+  async function login(res, userId) {
     const token = crypto.randomBytes(32).toString('base64url');
-    insertSession.run(token, userId, Date.now() + ttl);
+    await db.run('INSERT INTO sessions (token, user_id, expires_at) VALUES (?, ?, ?)', [token, userId, Date.now() + ttl]);
     res.setHeader('Set-Cookie', cookieHeader(token, Math.floor(ttl / 1000)));
   }
 
-  function logout(req, res) {
+  async function logout(req, res) {
     const token = parseCookies(req.headers.cookie)[COOKIE];
-    if (token) deleteSession.run(token);
+    if (token) await deleteSession(token);
     res.setHeader('Set-Cookie', cookieHeader('', 0));
   }
 
   // Attaches req.user when a valid session cookie is present.
-  function session(req, _res, next) {
-    const token = parseCookies(req.headers.cookie)[COOKIE];
-    if (token) {
-      const row = findSession.get(token);
-      if (row && row.expires_at > Date.now() && !row.is_blocked) {
-        req.user = {
-          id: row.id, username: row.username, displayName: row.display_name, role: row.role,
-          perms: permsOf(row.role), kycTier: row.kyc_tier, totpEnabled: !!row.totp_enabled_at,
-        };
-        req.sessionToken = token;
-      } else if (row) {
-        deleteSession.run(token);
+  async function session(req, _res, next) {
+    try {
+      const token = parseCookies(req.headers.cookie)[COOKIE];
+      if (token) {
+        const row = await findSession(token);
+        if (row && row.expires_at > Date.now() && !row.is_blocked) {
+          req.user = {
+            id: row.id, username: row.username, displayName: row.display_name, role: row.role,
+            perms: permsOf(row.role), kycTier: row.kyc_tier, totpEnabled: !!row.totp_enabled_at,
+          };
+          req.sessionToken = token;
+        } else if (row) {
+          await deleteSession(token);
+        }
       }
+      next();
+    } catch (err) {
+      next(err);
     }
-    next();
   }
 
   const requireUser = (req, _res, next) =>

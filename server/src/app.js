@@ -3,7 +3,8 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const express = require('express');
-const { open } = require('./db');
+const { openDb } = require('./db');
+const { createStorage } = require('./storage');
 const { createWallet } = require('./wallet');
 const { createMarket } = require('./market');
 const { createFunds } = require('./funds');
@@ -20,14 +21,20 @@ const { accountRoutes } = require('./routes/account');
 const { adminRoutes } = require('./routes/admin');
 const m = require('./money');
 
-// deps: tronClient (fake chain), sms (fake SMS sender), log — for tests.
-function createApp(config, deps = {}) {
+// deps: tronClient (fake chain), sms (fake SMS sender), storage, log — for tests.
+async function createApp(config, deps = {}) {
   const log = deps.log || console;
-  const db = open(config.dbPath);
+  if (config.nodeEnv === 'production') {
+    // Container disks are ephemeral: production data must live in Supabase (Postgres + Storage).
+    if (!config.databaseUrl) throw new Error('DATABASE_URL is required in production');
+    if (config.storage?.provider !== 'supabase') log.warn('[storage] KYC files on local disk; set STORAGE_PROVIDER=supabase');
+  }
+  const db = await openDb(config, { log });
   const wallet = createWallet(db);
   const box = createSecretBox(loadDataKey(config, log));
   const alerts = createAlerts(db, config);
-  const kyc = createKyc(db, config, { box });
+  const storage = deps.storage || createStorage(config);
+  const kyc = createKyc(db, config, { box, storage });
   const market = createMarket(db, wallet, config, {
     assertCanPostOffer: kyc.assertCanPostOffer,
     assertTrade: kyc.assertTrade,
@@ -50,10 +57,10 @@ function createApp(config, deps = {}) {
   const auth = createAuth(db, config);
   const security = createSecurity(db, config, { box, sms: deps.sms || createSmsSender(config, { log }), alerts, log });
 
-  seedAdmin(db, config);
+  await seedAdmin(db, config);
 
   const app = express();
-  app.set('trust proxy', 'loopback');
+  app.set('trust proxy', config.trustProxy ?? 'loopback');
   app.disable('x-powered-by');
   app.use((_req, res, next) => {
     res.setHeader('X-Content-Type-Options', 'nosniff');
@@ -94,6 +101,11 @@ function createApp(config, deps = {}) {
     !!req.user?.perms.includes('disputes') && (!config.requireStaff2fa || req.user.totpEnabled);
 
   // ---------- public ----------
+  // Liveness + database check for the load balancer.
+  api.get('/health', async (_req, res) => {
+    await db.one('SELECT 1 AS ok');
+    res.json({ ok: true, db: db.kind, chain: chain ? { leader: chain.isLeader() } : null });
+  });
   api.get('/config', (_req, res) => {
     res.json({
       fiat: config.fiat,
@@ -114,32 +126,32 @@ function createApp(config, deps = {}) {
   accountRoutes(api, ctx);
 
   // ---------- wallet ----------
-  api.get('/wallet', u, (req, res) => {
-    const b = wallet.balance(req.user.id);
+  api.get('/wallet', u, async (req, res) => {
+    const b = await wallet.balance(req.user.id);
     res.json({
       available: m.fmtUsdt(b.available),
       locked: m.fmtUsdt(b.locked),
       total: m.fmtUsdt(b.available + b.locked),
-      ledger: wallet.history(req.user.id).map((l) => ({
+      ledger: (await wallet.history(req.user.id)).map((l) => ({
         id: l.id, kind: l.kind, available: m.fmtUsdt(l.available_delta), locked: m.fmtUsdt(l.locked_delta),
         refType: l.ref_type, refId: l.ref_id, createdAt: l.created_at,
       })),
-      deposits: funds.myDeposits(req.user.id),
-      withdrawals: funds.myWithdrawals(req.user.id),
+      deposits: await funds.myDeposits(req.user.id),
+      withdrawals: await funds.myWithdrawals(req.user.id),
     });
   });
-  api.post('/deposits', u, (req, res) => {
+  api.post('/deposits', u, async (req, res) => {
     // With per-user addresses, deposits are detected on chain; manual TxID claims are not needed.
     if (chainOn) throw bad('chain_deposits_only');
-    res.status(201).json(funds.requestDeposit(req.user.id, req.body));
+    res.status(201).json(await funds.requestDeposit(req.user.id, req.body));
   });
-  api.get('/deposit-address', u, (req, res) => {
+  api.get('/deposit-address', u, async (req, res) => {
     if (!chainOn) throw notFound();
-    res.json({ address: chain.depositAddress(req.user.id), network: 'TRC20', minDeposit: m.fmtUsdt(config.tron.minDepositMicro) });
+    res.json({ address: await chain.depositAddress(req.user.id), network: 'TRC20', minDeposit: m.fmtUsdt(config.tron.minDepositMicro) });
   });
   api.post('/deposit-address/check', u, rateLimit({ windowMs: 60_000, max: 6 }), async (req, res) => {
     if (!chainOn) throw notFound();
-    chain.depositAddress(req.user.id);
+    await chain.depositAddress(req.user.id);
     res.json({ credited: await chain.scanUser(req.user.id) });
   });
   // Withdrawals need a fresh second factor: authenticator code, or an SMS code sent here first.
@@ -147,63 +159,64 @@ function createApp(config, deps = {}) {
     await security.sendWithdrawalCode(req.user.id, req);
     res.json({ ok: true });
   });
-  api.post('/withdrawals', u, (req, res) => {
+  api.post('/withdrawals', u, async (req, res) => {
     funds.validateWithdrawal(req.body);
-    security.checkWithdrawalCode(req.user.id, req.body.code, req);
-    const w = funds.requestWithdrawal(req.user.id, req.body);
-    security.event(req.user.id, 'withdrawal_requested', req);
+    await security.checkWithdrawalCode(req.user.id, req.body.code, req);
+    const w = await funds.requestWithdrawal(req.user.id, req.body);
+    await security.event(req.user.id, 'withdrawal_requested', req);
     res.status(201).json(w);
   });
 
   // ---------- payment accounts ----------
   const accountView = (a) => ({ id: a.id, method: a.method, holderName: a.holder_name, account: a.account });
-  api.get('/payment-accounts', u, (req, res) => {
-    res.json(db.prepare('SELECT * FROM payment_accounts WHERE user_id = ? ORDER BY id').all(req.user.id).map(accountView));
+  api.get('/payment-accounts', u, async (req, res) => {
+    res.json((await db.query('SELECT * FROM payment_accounts WHERE user_id = ? ORDER BY id', [req.user.id])).map(accountView));
   });
-  api.post('/payment-accounts', u, (req, res) => {
+  api.post('/payment-accounts', u, async (req, res) => {
     const method = String(req.body.method ?? '');
     const holderName = String(req.body.holderName ?? '').trim().slice(0, 80);
     const account = String(req.body.account ?? '').trim().slice(0, 80);
     if (!config.paymentMethods.includes(method)) throw bad('invalid_payment_method');
     if (!holderName || !account) throw bad('invalid_payment_account');
-    db.prepare(
+    const row = await db.one(
       `INSERT INTO payment_accounts (user_id, method, holder_name, account, created_at) VALUES (?, ?, ?, ?, ?)
-       ON CONFLICT (user_id, method) DO UPDATE SET holder_name = excluded.holder_name, account = excluded.account`
-    ).run(req.user.id, method, holderName, account, Date.now());
-    const row = db.prepare('SELECT * FROM payment_accounts WHERE user_id = ? AND method = ?').get(req.user.id, method);
+       ON CONFLICT (user_id, method) DO UPDATE SET holder_name = excluded.holder_name, account = excluded.account
+       RETURNING *`,
+      [req.user.id, method, holderName, account, Date.now()]
+    );
     res.status(201).json(accountView(row));
   });
-  api.post('/payment-accounts/:id/delete', u, (req, res) => {
-    const r = db.prepare('DELETE FROM payment_accounts WHERE id = ? AND user_id = ?').run(id(req), req.user.id);
-    if (!r.changes) throw notFound();
+  api.post('/payment-accounts/:id/delete', u, async (req, res) => {
+    const r = await db.run('DELETE FROM payment_accounts WHERE id = ? AND user_id = ?', [id(req), req.user.id]);
+    if (!r.rowCount) throw notFound();
     res.json({ ok: true });
   });
 
   // ---------- offers ----------
-  api.get('/offers', (req, res) => {
-    res.json(market.listMarket({ side: req.query.side, paymentMethod: req.query.paymentMethod, fiat: req.query.fiat }));
+  api.get('/offers', async (req, res) => {
+    res.json(await market.listMarket({ side: req.query.side, paymentMethod: req.query.paymentMethod, fiat: req.query.fiat }));
   });
-  api.get('/offers/mine', u, (req, res) => res.json(market.myOffers(req.user.id)));
-  api.get('/offers/:id', (req, res) => res.json(market.offer(id(req))));
-  api.post('/offers', u, (req, res) => res.status(201).json(market.createOffer(req.user.id, req.body)));
-  api.post('/offers/:id/status', u, (req, res) =>
-    res.json(market.setOfferStatus(req.user.id, id(req), req.body.status, isStaff(req)))
+  api.get('/offers/mine', u, async (req, res) => res.json(await market.myOffers(req.user.id)));
+  api.get('/offers/:id', async (req, res) => res.json(await market.offer(id(req))));
+  api.post('/offers', u, async (req, res) => res.status(201).json(await market.createOffer(req.user.id, req.body)));
+  api.post('/offers/:id/status', u, async (req, res) =>
+    res.json(await market.setOfferStatus(req.user.id, id(req), req.body.status, isStaff(req)))
   );
-  api.post('/offers/:id/trades', u, (req, res) =>
-    res.status(201).json(market.openTrade(req.user.id, id(req), req.body))
+  api.post('/offers/:id/trades', u, async (req, res) =>
+    res.status(201).json(await market.openTrade(req.user.id, id(req), req.body))
   );
 
   // ---------- trades ----------
-  api.get('/trades', u, (req, res) => res.json(market.myTrades(req.user.id)));
-  api.get('/trades/:id', u, (req, res) => res.json(market.trade(req.user.id, id(req), isStaff(req))));
+  api.get('/trades', u, async (req, res) => res.json(await market.myTrades(req.user.id)));
+  api.get('/trades/:id', u, async (req, res) => res.json(await market.trade(req.user.id, id(req), isStaff(req))));
   for (const action of ['pay', 'release', 'cancel', 'dispute']) {
-    api.post(`/trades/:id/${action}`, u, (req, res) => res.json(market.action(req.user.id, id(req), action, req.body)));
+    api.post(`/trades/:id/${action}`, u, async (req, res) => res.json(await market.action(req.user.id, id(req), action, req.body)));
   }
-  api.get('/trades/:id/messages', u, (req, res) =>
-    res.json(market.messages(req.user.id, id(req), Number(req.query.after) || 0, isStaff(req)))
+  api.get('/trades/:id/messages', u, async (req, res) =>
+    res.json(await market.messages(req.user.id, id(req), Number(req.query.after) || 0, isStaff(req)))
   );
-  api.post('/trades/:id/messages', u, rateLimit({ windowMs: 60_000, max: 30 }), (req, res) =>
-    res.status(201).json(market.postMessage(req.user.id, id(req), req.body.body, isStaff(req)))
+  api.post('/trades/:id/messages', u, rateLimit({ windowMs: 60_000, max: 30 }), async (req, res) =>
+    res.status(201).json(await market.postMessage(req.user.id, id(req), req.body.body, isStaff(req)))
   );
 
   adminRoutes(api, ctx);
@@ -213,36 +226,39 @@ function createApp(config, deps = {}) {
   api.use((err, _req, res, _next) => {
     if (err instanceof ApiError) return res.status(err.status).json({ error: err.code });
     if (err.type === 'entity.parse.failed') return res.status(400).json({ error: 'invalid_json' });
-    console.error(err);
+    if (err.code === '23505') return res.status(409).json({ error: 'conflict' }); // unique violation from a race
+    if (err.code === '40P01') return res.status(409).json({ error: 'try_again' }); // deadlock victim
+    log.error(err);
     res.status(500).json({ error: 'server_error' });
   });
 
   app.use('/api', api);
   if (hasWeb) app.get(/^\/(?!api\/).*/, (_req, res) => res.sendFile(path.join(webDist, 'index.html')));
 
-  const sweeper = setInterval(() => market.expireTrades(), 30_000);
+  const sweeper = setInterval(() => market.expireTrades().catch((e) => log.error('[market] expire', e.message)), 30_000);
   sweeper.unref();
   if (chain && deps.autoStartChain !== false) chain.start();
-  app.locals.close = () => {
+  app.locals.close = async () => {
     clearInterval(sweeper);
-    chain?.stop();
-    db.close();
+    await chain?.stop();
+    await db.close();
   };
   app.locals.db = db;
   app.locals.chain = chain;
   return app;
 }
 
-function seedAdmin(db, config) {
+async function seedAdmin(db, config) {
   if (!config.adminUsername || !config.adminPassword) return;
-  const existing = db.prepare('SELECT id FROM users WHERE username = ?').get(config.adminUsername);
+  const existing = await db.one('SELECT id FROM users WHERE lower(username) = lower(?)', [config.adminUsername]);
   if (existing) {
-    db.prepare("UPDATE users SET role = 'admin' WHERE id = ?").run(existing.id);
+    await db.run("UPDATE users SET role = 'admin' WHERE id = ?", [existing.id]);
     return;
   }
-  db.prepare(
-    "INSERT INTO users (username, display_name, password_hash, role, created_at) VALUES (?, ?, ?, 'admin', ?)"
-  ).run(config.adminUsername, 'Admin', hashPassword(config.adminPassword), Date.now());
+  await db.run(
+    "INSERT INTO users (username, display_name, password_hash, role, created_at) VALUES (?, ?, ?, 'admin', ?) ON CONFLICT DO NOTHING",
+    [config.adminUsername, 'Admin', hashPassword(config.adminPassword), Date.now()]
+  );
 }
 
 module.exports = { createApp };

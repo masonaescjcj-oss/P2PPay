@@ -169,7 +169,7 @@ test('expired trade is cancelled and funds return to the offer', async (t) => {
     side: 'sell', price: '70', total: '10', minFiat: '70', maxFiat: '700', paymentMethods: ['cash'],
   });
   const trade = await buyer.post(`/offers/${offer.data.id}/trades`, { amount: '5' });
-  s.app.locals.db.prepare('UPDATE trades SET expires_at = 0 WHERE id = ?').run(trade.data.id);
+  await s.db.run('UPDATE trades SET expires_at = 0 WHERE id = ?', [trade.data.id]);
   const tr = (await buyer.get(`/trades/${trade.data.id}`)).data;
   assert.equal(tr.status, 'cancelled');
   assert.equal(tr.resolution, 'expired');

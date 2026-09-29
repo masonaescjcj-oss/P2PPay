@@ -33,8 +33,8 @@ function loadDataKey(config, log = console) {
     return Buffer.from(config.dataKey, 'hex');
   }
   if (config.nodeEnv === 'production') throw new Error('DATA_ENCRYPTION_KEY is required in production');
-  if (config.dbPath === ':memory:') return crypto.randomBytes(32);
-  const file = path.join(path.dirname(config.dbPath), 'dev-data.key');
+  if (!config.databaseUrl && (!config.pgliteDir || config.pgliteDir === ':memory:')) return crypto.randomBytes(32);
+  const file = path.join(config.dataDir || path.join(__dirname, '..', '..', 'data'), 'dev-data.key');
   if (!fs.existsSync(file)) {
     fs.mkdirSync(path.dirname(file), { recursive: true });
     fs.writeFileSync(file, crypto.randomBytes(32).toString('hex'), { mode: 0o600 });

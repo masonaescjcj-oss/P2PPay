@@ -97,7 +97,7 @@ async function chainSetup(tronOverrides = {}) {
   );
   const chain = s.app.locals.chain;
   const db = s.app.locals.db;
-  const age = (username) => db.prepare('UPDATE users SET created_at = ? WHERE username = ?').run(Date.now() - 2 * 86_400_000, username);
+  const age = (username) => db.run('UPDATE users SET created_at = ? WHERE username = ?', [Date.now() - 2 * 86_400_000, username]);
   // Credit a user through a (fake) on-chain deposit to their own address.
   const fund = async (c, amount) => {
     const { address } = (await c.get('/deposit-address')).data;
@@ -135,14 +135,14 @@ test('chain deposits: per-user address, confirmed credit once, fake tokens and d
   assert.equal(deps.length, 2);
   assert.deepEqual(deps.map((d) => d.status).sort(), ['approved', 'rejected']);
   assert.ok(deps.every((d) => d.source === 'chain' && d.address === address));
-  assert.equal(s.db.prepare('SELECT needs_sweep FROM deposit_addresses WHERE address = ?').get(address).needs_sweep, 1);
+  assert.equal((await s.db.one('SELECT needs_sweep FROM deposit_addresses WHERE address = ?', [address])).needs_sweep, 1);
 });
 
 test('chain withdrawals: auto-send below limit, burn only on confirmation', async (t) => {
   const s = await chainSetup();
   t.after(s.close);
   const c = await s.user('bob');
-  s.age('bob');
+  await s.age('bob');
   await s.fund(c, '500');
   s.fake.usdt.set(kr.hotAddress, U(10_000));
   s.fake.trx.set(kr.hotAddress, 1_000_000_000n);
@@ -174,7 +174,7 @@ test('chain withdrawals: limits, admin send, broadcast rejection, revert, expiry
   t.after(s.close);
   const c = await s.user('carol');
   const fresh = await s.user('dave');
-  s.age('carol');
+  await s.age('carol');
   await s.fund(c, '1000');
   await s.fund(fresh, '50');
   s.fake.usdt.set(kr.hotAddress, U(10_000));
@@ -195,7 +195,7 @@ test('chain withdrawals: limits, admin send, broadcast rejection, revert, expiry
   // the rejected signed tx could still be broadcast by someone until it expires → no retry or refund yet
   assert.equal((await s.admin.post(`/admin/withdrawals/${big.id}/send`)).data.error, 'retry_later');
   assert.equal((await s.admin.post(`/admin/withdrawals/${big.id}/reject`, { note: 'x' })).data.error, 'retry_later');
-  s.db.prepare('UPDATE withdrawals SET tx_expires_at = ? WHERE id = ?').run(Date.now() - 10 * 60_000, big.id);
+  await s.db.run('UPDATE withdrawals SET tx_expires_at = ? WHERE id = ?', [Date.now() - 10 * 60_000, big.id]);
 
   // retry; this time it lands but reverts on chain → failed again
   s.fake.reply = () => ({ result: true });
@@ -213,7 +213,7 @@ test('chain withdrawals: limits, admin send, broadcast rejection, revert, expiry
   s.fake.reply = () => { throw new Error('socket hang up'); };
   assert.equal((await s.admin.post(`/admin/withdrawals/${big.id}/send`)).data.status, 'sending');
   const lastTx = s.fake.sent.at(-1).txid;
-  s.db.prepare('UPDATE withdrawals SET tx_expires_at = ? WHERE id = ?').run(Date.now() - 10 * 60_000, big.id);
+  await s.db.run('UPDATE withdrawals SET tx_expires_at = ? WHERE id = ?', [Date.now() - 10 * 60_000, big.id]);
   s.fake.known.add(lastTx);
   await s.chain.tick();
   assert.equal((await s.balance(c)).withdrawals.find((x) => x.id === big.id).status, 'sending'); // node still knows it
@@ -258,7 +258,7 @@ test('daily auto-withdrawal cap', async (t) => {
   const s = await chainSetup({ autoWithdrawMaxMicro: 100_000_000, dailyAutoMaxMicro: 150_000_000 });
   t.after(s.close);
   const c = await s.user('erin');
-  s.age('erin');
+  await s.age('erin');
   await s.fund(c, '500');
   s.fake.usdt.set(kr.hotAddress, U(10_000));
   s.fake.trx.set(kr.hotAddress, 1_000_000_000n);
@@ -295,7 +295,7 @@ test('sweeps: TRX top-up, then USDT to hot wallet, or to cold wallet when hot is
   s.fake.outcomes.set(sweep.txid, { ok: true });
   s.fake.usdt.set(address, 0n);
   await s.chain.sweepTick();
-  assert.equal(s.db.prepare('SELECT needs_sweep FROM deposit_addresses WHERE address = ?').get(address).needs_sweep, 0);
+  assert.equal((await s.db.one('SELECT needs_sweep FROM deposit_addresses WHERE address = ?', [address])).needs_sweep, 0);
 
   // next deposit while the hot wallet is above its cap → goes to cold storage
   s.fake.usdt.set(kr.hotAddress, U(5000));

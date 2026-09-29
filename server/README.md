@@ -1,16 +1,35 @@
 # P2PPay server
 
-Express 5 + Node.js 22 built-in SQLite (`node:sqlite`). Only one runtime dependency: `express`.
+Express 5 + Node.js 22 + **PostgreSQL** (Supabase in production).
 
 ```bash
 cd server
 cp .env.example .env   # set ADMIN_USERNAME / ADMIN_PASSWORD / DEPOSIT_ADDRESS
 npm install
-npm run dev            # http://localhost:3000
-npm test
+npm run dev            # http://localhost:3000 — no database server needed (embedded PGlite in data/pglite)
+npm test               # every test gets a fresh in-memory Postgres
+TEST_DATABASE_URL=postgres://postgres@localhost:5432/postgres npm test   # against a real PostgreSQL
+npm run db:migrate     # apply supabase/migrations to DATABASE_URL
 ```
 
 If `web/dist` exists (after `npm run build` in `web/`), the server also serves the web app.
+Deployment (Supabase + Fly.io): [`../DEPLOY.md`](../DEPLOY.md).
+
+## Database
+
+- Schema: [`supabase/migrations/`](../supabase/migrations) — plain SQL, recorded in `supabase_migrations.schema_migrations`
+  exactly like the Supabase CLI does, so `supabase db push` and `npm run db:migrate` agree on what is applied.
+- All tables live in the private schema **`app`** with Row Level Security on and no policies, and `anon` / `authenticated`
+  have no privileges: Supabase's auto-generated REST/GraphQL APIs cannot read or write anything. Only this server
+  (connecting as the database owner) touches the data.
+- `DATABASE_URL` set → node-postgres pool. Unset → [PGlite](https://pglite.dev) (Postgres in WebAssembly), for development and tests.
+- Race safety: balance changes are single conditional `UPDATE`s (`… WHERE available + Δ >= 0`) plus `CHECK (>= 0)`;
+  trades and offers are locked with `SELECT … FOR UPDATE` (trade → offer order); per-user limits are serialized with
+  `pg_advisory_xact_lock`; one-time codes and login challenges reserve an attempt atomically before the check; a TOTP
+  step can only move forward; one txid can never be both claimed manually and credited from the chain.
+  `test/concurrency.test.js` fires parallel requests at each of these.
+- The chain loop runs on exactly one instance: it holds a session advisory lock (`db.leader`), so use Supabase's
+  **session pooler (port 5432) or direct connection**, not the transaction pooler (6543).
 
 ## Money
 
@@ -138,4 +157,4 @@ Transaction safety:
 
 - A single TronGrid provider is trusted for chain data; for large volumes run your own full node or cross-check a second provider.
 - The mnemonic lives in the server process; a separate signing service / HSM is the next step for larger balances.
-- Rate limiting is in-memory (single process).
+- Rate limiting is in-memory (per instance); with several instances the effective limit is multiplied.

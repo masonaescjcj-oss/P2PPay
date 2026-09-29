@@ -6,8 +6,6 @@
 //   tier 2: identity document (tazkira / passport) + selfie approved
 //   tier 3: enhanced / merchant, granted by staff
 const crypto = require('node:crypto');
-const fs = require('node:fs');
-const path = require('node:path');
 const { bad, forbidden, notFound, conflict } = require('./errors');
 const m = require('./money');
 
@@ -22,70 +20,78 @@ function sniffImage(buf) {
   return null;
 }
 
-function createKyc(db, config, { box }) {
+function createKyc(db, config, { box, storage }) {
   const now = () => Date.now();
-  const tierOf = (userId) => db.prepare('SELECT kyc_tier FROM users WHERE id = ?').get(userId)?.kyc_tier ?? 0;
+  const tierOf = async (userId) => (await db.one('SELECT kyc_tier FROM users WHERE id = ?', [userId]))?.kyc_tier ?? 0;
   const limitsOf = (tier) => config.kycLimits[tier] || config.kycLimits[0];
 
-  const tradeVolume = (userId) =>
-    db
-      .prepare(
+  const tradeVolume = async (userId) =>
+    (
+      await db.one(
         `SELECT COALESCE(SUM(amount), 0) s FROM trades
-         WHERE (buyer_id = ? OR seller_id = ?) AND status != 'cancelled' AND created_at > ?`
+         WHERE (buyer_id = ? OR seller_id = ?) AND status != 'cancelled' AND created_at > ?`,
+        [userId, userId, now() - DAY]
       )
-      .get(userId, userId, now() - DAY).s;
-  const withdrawVolume = (userId) =>
-    db
-      .prepare("SELECT COALESCE(SUM(amount), 0) s FROM withdrawals WHERE user_id = ? AND status IN ('pending','sending','sent') AND created_at > ?")
-      .get(userId, now() - DAY).s;
+    ).s;
+  const withdrawVolume = async (userId) =>
+    (
+      await db.one(
+        "SELECT COALESCE(SUM(amount), 0) s FROM withdrawals WHERE user_id = ? AND status IN ('pending','sending','sent') AND created_at > ?",
+        [userId, now() - DAY]
+      )
+    ).s;
 
-  function status(userId) {
-    const tier = tierOf(userId);
+  async function status(userId) {
+    const tier = await tierOf(userId);
     const lim = limitsOf(tier);
-    const sub = db.prepare('SELECT * FROM kyc_submissions WHERE user_id = ? ORDER BY id DESC LIMIT 1').get(userId);
+    const sub = await db.one('SELECT * FROM kyc_submissions WHERE user_id = ? ORDER BY id DESC LIMIT 1', [userId]);
     return {
       tier,
       limits: { trade: m.fmtUsdt(lim.trade), withdraw: m.fmtUsdt(lim.withdraw) },
-      used: { trade: m.fmtUsdt(tradeVolume(userId)), withdraw: m.fmtUsdt(withdrawVolume(userId)) },
+      used: { trade: m.fmtUsdt(await tradeVolume(userId)), withdraw: m.fmtUsdt(await withdrawVolume(userId)) },
       tiers: Object.fromEntries(Object.entries(config.kycLimits).map(([k, v]) => [k, { trade: m.fmtUsdt(v.trade), withdraw: m.fmtUsdt(v.withdraw) }])),
-      submission: sub ? submissionView(sub) : null,
+      submission: sub ? await submissionView(sub) : null,
     };
   }
 
   // ---------- enforcement ----------
-  function assertCanPostOffer(userId) {
-    if (tierOf(userId) < 1) throw forbidden('kyc_required');
+  async function assertCanPostOffer(userId) {
+    if ((await tierOf(userId)) < 1) throw forbidden('kyc_required');
   }
 
-  // actorId opened the trade; both sides must stay within their own 24h limit.
-  function assertTrade({ actorId, buyerId, sellerId, amount }) {
+  // actorId opened the trade; both sides must stay within their own 24h limit. Runs inside the
+  // trade transaction; per-user advisory locks (taken in id order) stop parallel trades racing the limit.
+  async function assertTrade({ actorId, buyerId, sellerId, amount }) {
+    for (const uid of [buyerId, sellerId].sort((a, b) => a - b)) await db.run('SELECT pg_advisory_xact_lock(?, ?)', [9002, uid]);
     for (const uid of [buyerId, sellerId]) {
-      const lim = limitsOf(tierOf(uid)).trade;
+      const lim = limitsOf(await tierOf(uid)).trade;
       if (lim === 0) throw forbidden(uid === actorId ? 'kyc_required' : 'counterparty_limit');
-      if (tradeVolume(uid) + amount > lim) throw conflict(uid === actorId ? 'limit_exceeded' : 'counterparty_limit');
+      if ((await tradeVolume(uid)) + amount > lim) throw conflict(uid === actorId ? 'limit_exceeded' : 'counterparty_limit');
     }
   }
 
-  function assertWithdraw(userId, amount) {
-    const lim = limitsOf(tierOf(userId)).withdraw;
+  async function assertWithdraw(userId, amount) {
+    const lim = limitsOf(await tierOf(userId)).withdraw;
     if (lim === 0) throw forbidden('kyc_required');
-    if (withdrawVolume(userId) + amount > lim) throw conflict('limit_exceeded');
+    if ((await withdrawVolume(userId)) + amount > lim) throw conflict('limit_exceeded');
   }
 
   // ---------- submissions ----------
-  function submissionView(s, withFiles = false) {
+  const getSub = (id) => db.one('SELECT * FROM kyc_submissions WHERE id = ?', [id]);
+
+  async function submissionView(s, withFiles = false) {
     const v = {
       id: s.id, userId: s.user_id, docType: s.doc_type, fullName: s.full_name, docNumber: s.doc_number, status: s.status,
       tierGranted: s.tier_granted, reason: s.reason, createdAt: s.created_at, submittedAt: s.submitted_at, reviewedAt: s.reviewed_at,
-      files: db.prepare('SELECT kind, mime, size FROM kyc_files WHERE submission_id = ?').all(s.id).map((f) => ({ ...f })),
+      files: await db.query('SELECT kind, mime, size FROM kyc_files WHERE submission_id = ? ORDER BY kind', [s.id]),
     };
     if (!withFiles) delete v.userId;
     return v;
   }
 
-  function startSubmission(userId, input) {
-    if (tierOf(userId) < 1) throw forbidden('phone_first');
-    const open = db.prepare("SELECT * FROM kyc_submissions WHERE user_id = ? AND status IN ('draft','pending') ORDER BY id DESC LIMIT 1").get(userId);
+  async function startSubmission(userId, input) {
+    if ((await tierOf(userId)) < 1) throw forbidden('phone_first');
+    const open = await db.one("SELECT * FROM kyc_submissions WHERE user_id = ? AND status IN ('draft','pending') ORDER BY id DESC LIMIT 1", [userId]);
     if (open?.status === 'pending') throw conflict('kyc_pending');
     const docType = input.docType;
     if (!['tazkira', 'passport'].includes(docType)) throw bad('invalid_doc_type');
@@ -94,70 +100,66 @@ function createKyc(db, config, { box }) {
     if (fullName.length < 3) throw bad('invalid_full_name');
     if (!/^[\p{L}\p{N} /-]{4,40}$/u.test(docNumber)) throw bad('invalid_doc_number');
     if (open) {
-      db.prepare('UPDATE kyc_submissions SET doc_type = ?, full_name = ?, doc_number = ? WHERE id = ?').run(docType, fullName, docNumber, open.id);
-      return submissionView(db.prepare('SELECT * FROM kyc_submissions WHERE id = ?').get(open.id));
+      return submissionView(await db.one('UPDATE kyc_submissions SET doc_type = ?, full_name = ?, doc_number = ? WHERE id = ? RETURNING *', [docType, fullName, docNumber, open.id]));
     }
-    const { lastInsertRowid } = db
-      .prepare('INSERT INTO kyc_submissions (user_id, doc_type, full_name, doc_number, created_at) VALUES (?, ?, ?, ?, ?)')
-      .run(userId, docType, fullName, docNumber, now());
-    return submissionView(db.prepare('SELECT * FROM kyc_submissions WHERE id = ?').get(lastInsertRowid));
+    return submissionView(
+      await db.one('INSERT INTO kyc_submissions (user_id, doc_type, full_name, doc_number, created_at) VALUES (?, ?, ?, ?, ?) RETURNING *', [userId, docType, fullName, docNumber, now()])
+    );
   }
 
-  function ownDraft(userId, id) {
-    const s = db.prepare('SELECT * FROM kyc_submissions WHERE id = ? AND user_id = ?').get(id, userId);
+  async function ownDraft(userId, id) {
+    const s = await db.one('SELECT * FROM kyc_submissions WHERE id = ? AND user_id = ?', [id, userId]);
     if (!s) throw notFound();
     if (s.status !== 'draft') throw conflict('kyc_not_editable');
     return s;
   }
 
-  function addFile(userId, id, kind, buf) {
-    const s = ownDraft(userId, id);
+  async function addFile(userId, id, kind, buf) {
+    const s = await ownDraft(userId, id);
     if (!KINDS.includes(kind)) throw bad('invalid_file_kind');
     if (!Buffer.isBuffer(buf) || buf.length === 0) throw bad('empty_file');
     if (buf.length > MAX_FILE) throw bad('file_too_large');
     const mime = sniffImage(buf);
     if (!mime) throw bad('invalid_image');
-    fs.mkdirSync(config.kycDir, { recursive: true, mode: 0o700 });
-    const name = crypto.randomBytes(16).toString('hex') + '.bin';
-    fs.writeFileSync(path.join(config.kycDir, name), box.seal(buf), { mode: 0o600 });
-    const old = db.prepare('SELECT path FROM kyc_files WHERE submission_id = ? AND kind = ?').get(s.id, kind);
-    db.prepare(
+    const name = `${s.user_id}/${crypto.randomBytes(16).toString('hex')}.bin`;
+    await storage.put(name, box.seal(buf));
+    const old = await db.one('SELECT path FROM kyc_files WHERE submission_id = ? AND kind = ?', [s.id, kind]);
+    await db.run(
       `INSERT INTO kyc_files (submission_id, kind, path, mime, size, sha256, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT (submission_id, kind) DO UPDATE SET path = excluded.path, mime = excluded.mime, size = excluded.size,
-         sha256 = excluded.sha256, created_at = excluded.created_at`
-    ).run(s.id, kind, name, mime, buf.length, crypto.createHash('sha256').update(buf).digest('hex'), now());
-    if (old) fs.rmSync(path.join(config.kycDir, old.path), { force: true });
-    return submissionView(db.prepare('SELECT * FROM kyc_submissions WHERE id = ?').get(s.id));
+         sha256 = excluded.sha256, created_at = excluded.created_at`,
+      [s.id, kind, name, mime, buf.length, crypto.createHash('sha256').update(buf).digest('hex'), now()]
+    );
+    if (old) await storage.remove(old.path).catch(() => {});
+    return submissionView(await getSub(s.id));
   }
 
-  function submit(userId, id) {
-    const s = ownDraft(userId, id);
-    const kinds = db.prepare('SELECT kind FROM kyc_files WHERE submission_id = ?').all(s.id).map((f) => f.kind);
+  async function submit(userId, id) {
+    const s = await ownDraft(userId, id);
+    const kinds = (await db.query('SELECT kind FROM kyc_files WHERE submission_id = ?', [s.id])).map((f) => f.kind);
     if (!kinds.includes('front') || !kinds.includes('selfie')) throw bad('kyc_files_missing');
-    db.prepare("UPDATE kyc_submissions SET status = 'pending', submitted_at = ? WHERE id = ?").run(now(), s.id);
-    return submissionView(db.prepare('SELECT * FROM kyc_submissions WHERE id = ?').get(s.id));
+    return submissionView(await db.one("UPDATE kyc_submissions SET status = 'pending', submitted_at = ? WHERE id = ? RETURNING *", [now(), s.id]));
   }
 
   // ---------- staff review ----------
-  function list(status) {
-    return db
-      .prepare(
-        `SELECT k.*, u.username, u.display_name, u.kyc_tier FROM kyc_submissions k JOIN users u ON u.id = k.user_id
-         WHERE (? IS NULL AND k.status != 'draft') OR k.status = ? ORDER BY k.id DESC LIMIT 200`
-      )
-      .all(status ?? null, status ?? null)
-      .map((r) => ({ ...submissionView(r, true), username: r.username, displayName: r.display_name, currentTier: r.kyc_tier }));
+  async function list(status) {
+    const rows = await db.query(
+      `SELECT k.*, u.username, u.display_name, u.kyc_tier FROM kyc_submissions k JOIN users u ON u.id = k.user_id
+       WHERE (?::text IS NULL AND k.status != 'draft') OR k.status = ? ORDER BY k.id DESC LIMIT 200`,
+      [status ?? null, status ?? null]
+    );
+    return Promise.all(rows.map(async (r) => ({ ...(await submissionView(r, true)), username: r.username, displayName: r.display_name, currentTier: r.kyc_tier })));
   }
 
-  function readFile(id, kind) {
-    const f = db.prepare('SELECT * FROM kyc_files WHERE submission_id = ? AND kind = ?').get(id, kind);
+  async function readFile(id, kind) {
+    const f = await db.one('SELECT * FROM kyc_files WHERE submission_id = ? AND kind = ?', [id, kind]);
     if (!f) throw notFound();
-    return { mime: f.mime, data: box.open(fs.readFileSync(path.join(config.kycDir, f.path))) };
+    return { mime: f.mime, data: box.open(await storage.get(f.path)) };
   }
 
   function review(id, approve, { tier = 2, reason = '' } = {}, reviewerId) {
-    return db.tx(() => {
-      const s = db.prepare('SELECT * FROM kyc_submissions WHERE id = ?').get(id);
+    return db.tx(async () => {
+      const s = await db.one('SELECT * FROM kyc_submissions WHERE id = ? FOR UPDATE', [id]);
       if (!s) throw notFound();
       if (s.user_id === reviewerId) throw forbidden('own_request');
       if (s.status !== 'pending') throw conflict('already_reviewed');
@@ -165,17 +167,19 @@ function createKyc(db, config, { box }) {
       if (approve && ![2, 3].includes(t)) throw bad('invalid_tier');
       const why = String(reason ?? '').trim().slice(0, 500);
       if (!approve && !why) throw bad('reason_required');
-      db.prepare('UPDATE kyc_submissions SET status = ?, tier_granted = ?, reason = ?, reviewer_id = ?, reviewed_at = ? WHERE id = ?')
-        .run(approve ? 'approved' : 'rejected', approve ? t : null, why || null, reviewerId, now(), s.id);
-      if (approve) db.prepare('UPDATE users SET kyc_tier = MAX(kyc_tier, ?) WHERE id = ?').run(t, s.user_id);
-      return submissionView(db.prepare('SELECT * FROM kyc_submissions WHERE id = ?').get(s.id), true);
+      const row = await db.one(
+        'UPDATE kyc_submissions SET status = ?, tier_granted = ?, reason = ?, reviewer_id = ?, reviewed_at = ? WHERE id = ? RETURNING *',
+        [approve ? 'approved' : 'rejected', approve ? t : null, why || null, reviewerId, now(), s.id]
+      );
+      if (approve) await db.run('UPDATE users SET kyc_tier = GREATEST(kyc_tier, ?) WHERE id = ?', [t, s.user_id]);
+      return submissionView(row, true);
     });
   }
 
-  function setTier(userId, tier) {
+  async function setTier(userId, tier) {
     const t = Number(tier);
     if (![0, 1, 2, 3].includes(t)) throw bad('invalid_tier');
-    if (!db.prepare('UPDATE users SET kyc_tier = ? WHERE id = ?').run(t, userId).changes) throw notFound();
+    if (!(await db.run('UPDATE users SET kyc_tier = ? WHERE id = ?', [t, userId])).rowCount) throw notFound();
   }
 
   return { status, assertCanPostOffer, assertTrade, assertWithdraw, startSubmission, addFile, submit, list, readFile, review, setTier, tierOf };

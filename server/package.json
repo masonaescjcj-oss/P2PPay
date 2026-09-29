@@ -11,16 +11,19 @@
     "start": "node --env-file-if-exists=.env --disable-warning=ExperimentalWarning src/index.js",
     "dev": "node --env-file-if-exists=.env --disable-warning=ExperimentalWarning --watch src/index.js",
     "test": "node --disable-warning=ExperimentalWarning --test \"test/**/*.test.js\"",
-    "wallet:new": "node --disable-warning=ExperimentalWarning src/tools/new-wallet.js"
+    "wallet:new": "node --disable-warning=ExperimentalWarning src/tools/new-wallet.js",
+    "db:migrate": "node --env-file-if-exists=.env src/tools/migrate.js"
   },
   "license": "MIT",
   "dependencies": {
+    "@electric-sql/pglite": "^0.5.8",
     "@noble/curves": "^2.4.0",
     "@noble/hashes": "^2.4.0",
     "@scure/base": "^2.4.0",
     "@scure/bip32": "^2.4.0",
     "@scure/bip39": "^2.4.0",
-    "express": "^5.2.1"
+    "express": "^5.2.1",
+    "pg": "^8.23.0"
   },
   "devDependencies": {
     "tronweb": "^6.5.1"

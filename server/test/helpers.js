@@ -11,6 +11,8 @@ const totp = require('../src/security/totp');
 const TXID = (n) => n.toString(16).padStart(64, 'a');
 const ADDR = 'TQn9Y2khEsLJW1ChVWFMSMeRDow5KcbLSE';
 let phoneSeq = 0;
+let dbSeq = 0;
+const quietLog = { log() {}, info() {}, warn() {}, error: console.error };
 
 // A fake SMS gateway: remembers the last code sent to each number.
 function fakeSms() {
@@ -21,14 +23,41 @@ function fakeSms() {
   return send;
 }
 
+// TEST_DATABASE_URL=postgres://…/postgres runs the suite against a real PostgreSQL server
+// (a fresh database per test); otherwise each test gets an in-memory PGlite.
+async function freshDatabase() {
+  const admin = process.env.TEST_DATABASE_URL;
+  if (!admin) return { url: '', drop: async () => {} };
+  const { Client } = require('pg');
+  const name = `p2ppay_test_${process.pid}_${++dbSeq}_${Date.now().toString(36)}`;
+  const c = new Client({ connectionString: admin });
+  await c.connect();
+  await c.query(`CREATE DATABASE ${name}`);
+  await c.end();
+  const url = new URL(admin);
+  url.pathname = `/${name}`;
+  return {
+    url: url.toString(),
+    async drop() {
+      const d = new Client({ connectionString: admin });
+      await d.connect();
+      await d.query(`DROP DATABASE IF EXISTS ${name} WITH (FORCE)`);
+      await d.end();
+    },
+  };
+}
+
 async function setup(overrides = {}, deps = {}) {
   const kycDir = fs.mkdtempSync(path.join(os.tmpdir(), 'p2ppay-kyc-'));
+  const database = await freshDatabase();
   const config = {
-    ...baseConfig, dbPath: ':memory:', adminUsername: 'admin', adminPassword: 'adminpass123', tradeFeeBps: 10,
+    ...baseConfig, databaseUrl: database.url, pgliteDir: ':memory:', dataKey: '', storage: { provider: 'local' },
+    adminUsername: 'admin', adminPassword: 'adminpass123', tradeFeeBps: 10,
     otpResendMs: 0, kycDir, ...overrides,
   };
   const sms = deps.sms || fakeSms();
-  const app = createApp(config, { ...deps, sms });
+  const app = await createApp(config, { ...deps, sms, log: deps.log || quietLog });
+  const db = app.locals.db;
   const server = await new Promise((r) => { const s = app.listen(0, () => r(s)); });
   const base = `http://127.0.0.1:${server.address().port}/api`;
 
@@ -109,12 +138,13 @@ async function setup(overrides = {}, deps = {}) {
   }
 
   const balance = async (c) => (await c.get('/wallet')).data;
-  const close = () => {
-    server.close();
-    app.locals.close();
+  const close = async () => {
+    await new Promise((r) => server.close(r));
+    await app.locals.close();
+    await database.drop();
     fs.rmSync(kycDir, { recursive: true, force: true });
   };
-  return { app, config, base, admin, user, client, fund, account, balance, close, sms, verifyPhone, enableTotp, withdraw };
+  return { app, db, config, base, admin, user, client, fund, account, balance, close, sms, verifyPhone, enableTotp, withdraw };
 }
 
 module.exports = { setup, fakeSms, TXID, ADDR };

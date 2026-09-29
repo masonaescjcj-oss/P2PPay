@@ -20,10 +20,21 @@ if (network === 'mainnet' && process.env.TRON_MAINNET_CONFIRM !== 'yes') {
   throw new Error('Refusing to start on TRON mainnet without TRON_MAINNET_CONFIRM=yes');
 }
 const net = NETWORKS[network] || NETWORKS.mainnet;
+const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, '..', 'data');
 
 module.exports = {
   port: int('PORT', 3000),
-  dbPath: process.env.DB_PATH || path.join(__dirname, '..', 'data', 'p2ppay.db'),
+  dataDir: DATA_DIR,
+  // PostgreSQL (Supabase in production). Use the session pooler (port 5432) or the direct connection:
+  // the chain loop holds a session-level advisory lock, which the transaction pooler (6543) cannot keep.
+  databaseUrl: process.env.DATABASE_URL || '',
+  // Supabase CA certificate for verified TLS: a file path, or the PEM itself (e.g. a Fly.io secret).
+  databaseCaPath: process.env.DATABASE_CA_PATH || '',
+  databaseCa: process.env.DATABASE_CA || '',
+  databasePoolSize: int('DATABASE_POOL_SIZE', 10),
+  // Without DATABASE_URL: embedded Postgres (PGlite) in this folder — development only.
+  pgliteDir: process.env.PGLITE_DIR || path.join(DATA_DIR, 'pglite'),
+  migrateOnStart: process.env.MIGRATE_ON_START !== '0',
   // Platform USDT deposit address shown to users (TRC20 / Tron network).
   depositAddress: process.env.DEPOSIT_ADDRESS || 'TXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX',
   network: 'TRC20',
@@ -36,6 +47,8 @@ module.exports = {
   defaultPaymentWindowMin: int('PAYMENT_WINDOW_MIN', 30),
   sessionDays: int('SESSION_DAYS', 14),
   cookieSecure: process.env.COOKIE_SECURE === '1',
+  // Proxies in front of the app whose X-Forwarded-For is trusted: a hop count (Fly.io: 1) or Express names.
+  trustProxy: /^\d+$/.test(process.env.TRUST_PROXY || '') ? Number(process.env.TRUST_PROXY) : process.env.TRUST_PROXY || 'loopback',
   adminUsername: process.env.ADMIN_USERNAME || '',
   adminPassword: process.env.ADMIN_PASSWORD || '',
   fiat: 'AFN',
@@ -44,7 +57,15 @@ module.exports = {
   nodeEnv: process.env.NODE_ENV || 'development',
   // 64 hex chars (32 bytes). Encrypts TOTP secrets and KYC documents. Required in production.
   dataKey: process.env.DATA_ENCRYPTION_KEY || '',
-  kycDir: process.env.KYC_DIR || path.join(__dirname, '..', 'data', 'kyc'),
+  // Encrypted KYC documents: local folder (development) or a private Supabase Storage bucket.
+  kycDir: process.env.KYC_DIR || path.join(DATA_DIR, 'kyc'),
+  storage: {
+    provider: process.env.STORAGE_PROVIDER || 'local',
+    url: process.env.SUPABASE_URL || '',
+    // Secret: server-side only, never sent to the browser.
+    serviceKey: process.env.SUPABASE_SERVICE_ROLE_KEY || '',
+    bucket: process.env.KYC_BUCKET || 'kyc',
+  },
   sms: {
     // console = print codes to the server log (development only); twilio = send real SMS
     provider: process.env.SMS_PROVIDER || 'console',

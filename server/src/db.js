@@ -1,377 +1,207 @@
 'use strict';
 
+// PostgreSQL access. Production: Supabase (or any Postgres) via DATABASE_URL and node-postgres.
+// Development and tests: PGlite — real Postgres compiled to WebAssembly, in-process, no server needed.
+//
+//   db.query(sql, params) → rows      db.one(...) → first row      db.run(...) → { rowCount, rows }
+//   db.tx(async () => { ... })         — every db.* call inside (even in nested functions) joins the
+//                                        same transaction, via AsyncLocalStorage; nested tx() joins too.
+// SQL uses `?` placeholders (converted to $1, $2 …). Tables live in the private schema `app`.
 const fs = require('node:fs');
 const path = require('node:path');
-const { DatabaseSync } = require('node:sqlite');
+const { AsyncLocalStorage } = require('node:async_hooks');
 
-const SCHEMA = `
-CREATE TABLE IF NOT EXISTS users (
-  id INTEGER PRIMARY KEY,
-  username TEXT NOT NULL UNIQUE COLLATE NOCASE,
-  phone TEXT,
-  display_name TEXT NOT NULL,
-  password_hash TEXT NOT NULL,
-  role TEXT NOT NULL DEFAULT 'user' CHECK (role IN ('user','admin')),
-  is_blocked INTEGER NOT NULL DEFAULT 0,
-  created_at INTEGER NOT NULL
-);
+const MIGRATIONS_DIR = path.join(__dirname, '..', '..', 'supabase', 'migrations');
+const INT8 = 20;
+const NUMERIC = 1700;
 
-CREATE TABLE IF NOT EXISTS sessions (
-  token TEXT PRIMARY KEY,
-  user_id INTEGER NOT NULL REFERENCES users(id),
-  expires_at INTEGER NOT NULL
-);
-
--- Balances in micro-USDT. "locked" is held in escrow / pending withdrawal.
-CREATE TABLE IF NOT EXISTS balances (
-  user_id INTEGER PRIMARY KEY REFERENCES users(id),
-  available INTEGER NOT NULL DEFAULT 0 CHECK (available >= 0),
-  locked INTEGER NOT NULL DEFAULT 0 CHECK (locked >= 0)
-);
-
--- Append-only ledger. user_id NULL = platform (fees).
-CREATE TABLE IF NOT EXISTS ledger (
-  id INTEGER PRIMARY KEY,
-  user_id INTEGER REFERENCES users(id),
-  kind TEXT NOT NULL,
-  available_delta INTEGER NOT NULL,
-  locked_delta INTEGER NOT NULL,
-  ref_type TEXT,
-  ref_id INTEGER,
-  created_at INTEGER NOT NULL
-);
-CREATE INDEX IF NOT EXISTS ledger_user ON ledger(user_id, id);
-
-CREATE TABLE IF NOT EXISTS deposits (
-  id INTEGER PRIMARY KEY,
-  user_id INTEGER NOT NULL REFERENCES users(id),
-  amount INTEGER NOT NULL CHECK (amount > 0),
-  network TEXT NOT NULL,
-  txid TEXT NOT NULL UNIQUE,
-  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','approved','rejected')),
-  note TEXT,
-  created_at INTEGER NOT NULL,
-  reviewed_at INTEGER
-);
-
-CREATE TABLE IF NOT EXISTS withdrawals (
-  id INTEGER PRIMARY KEY,
-  user_id INTEGER NOT NULL REFERENCES users(id),
-  amount INTEGER NOT NULL CHECK (amount > 0),
-  fee INTEGER NOT NULL,
-  network TEXT NOT NULL,
-  address TEXT NOT NULL,
-  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','sent','rejected')),
-  txid TEXT,
-  note TEXT,
-  created_at INTEGER NOT NULL,
-  reviewed_at INTEGER
-);
-
--- side: 'sell' = maker sells USDT (maker's USDT locked up front), 'buy' = maker buys USDT.
-CREATE TABLE IF NOT EXISTS offers (
-  id INTEGER PRIMARY KEY,
-  user_id INTEGER NOT NULL REFERENCES users(id),
-  side TEXT NOT NULL CHECK (side IN ('buy','sell')),
-  price INTEGER NOT NULL CHECK (price > 0),
-  total INTEGER NOT NULL CHECK (total > 0),
-  remaining INTEGER NOT NULL CHECK (remaining >= 0),
-  min_fiat INTEGER NOT NULL,
-  max_fiat INTEGER NOT NULL,
-  payment_methods TEXT NOT NULL,
-  terms TEXT NOT NULL DEFAULT '',
-  payment_window INTEGER NOT NULL,
-  status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','paused','closed')),
-  created_at INTEGER NOT NULL
-);
-CREATE INDEX IF NOT EXISTS offers_market ON offers(status, side, price);
-
-CREATE TABLE IF NOT EXISTS trades (
-  id INTEGER PRIMARY KEY,
-  offer_id INTEGER NOT NULL REFERENCES offers(id),
-  maker_id INTEGER NOT NULL REFERENCES users(id),
-  taker_id INTEGER NOT NULL REFERENCES users(id),
-  buyer_id INTEGER NOT NULL REFERENCES users(id),
-  seller_id INTEGER NOT NULL REFERENCES users(id),
-  amount INTEGER NOT NULL CHECK (amount > 0),
-  price INTEGER NOT NULL,
-  fiat INTEGER NOT NULL,
-  fee INTEGER NOT NULL,
-  payment_method TEXT NOT NULL,
-  status TEXT NOT NULL CHECK (status IN ('pending_payment','paid','disputed','completed','cancelled')),
-  dispute_reason TEXT,
-  resolution TEXT,
-  expires_at INTEGER NOT NULL,
-  paid_at INTEGER,
-  closed_at INTEGER,
-  created_at INTEGER NOT NULL
-);
-CREATE INDEX IF NOT EXISTS trades_buyer ON trades(buyer_id);
-CREATE INDEX IF NOT EXISTS trades_seller ON trades(seller_id);
-CREATE INDEX IF NOT EXISTS trades_status ON trades(status, expires_at);
-
-CREATE TABLE IF NOT EXISTS trade_messages (
-  id INTEGER PRIMARY KEY,
-  trade_id INTEGER NOT NULL REFERENCES trades(id),
-  user_id INTEGER REFERENCES users(id),
-  body TEXT NOT NULL,
-  created_at INTEGER NOT NULL
-);
-CREATE INDEX IF NOT EXISTS messages_trade ON trade_messages(trade_id, id);
-
--- Where a user receives AFN for a given payment method (shown to the buyer of a trade).
-CREATE TABLE IF NOT EXISTS payment_accounts (
-  id INTEGER PRIMARY KEY,
-  user_id INTEGER NOT NULL REFERENCES users(id),
-  method TEXT NOT NULL,
-  holder_name TEXT NOT NULL,
-  account TEXT NOT NULL,
-  created_at INTEGER NOT NULL,
-  UNIQUE (user_id, method)
-);
-
--- Every admin decision, for accountability.
-CREATE TABLE IF NOT EXISTS admin_actions (
-  id INTEGER PRIMARY KEY,
-  admin_id INTEGER NOT NULL REFERENCES users(id),
-  action TEXT NOT NULL,
-  target_type TEXT NOT NULL,
-  target_id INTEGER NOT NULL,
-  note TEXT,
-  created_at INTEGER NOT NULL
-);
-CREATE INDEX IF NOT EXISTS admin_actions_time ON admin_actions(id DESC);
-`;
-
-// Ordered schema migrations, tracked with PRAGMA user_version. Never edit a released step; add a new one.
-const MIGRATIONS = [
-  // 1: base schema
-  (db) => db.exec(SCHEMA),
-  // 2: TRON chain mode — per-user deposit addresses, chain deposits, on-chain withdrawal states, sweeps
-  (db) => {
-    db.exec(`
-      CREATE TABLE deposits_new (
-        id INTEGER PRIMARY KEY,
-        user_id INTEGER NOT NULL REFERENCES users(id),
-        amount INTEGER NOT NULL CHECK (amount > 0),
-        network TEXT NOT NULL,
-        txid TEXT NOT NULL,
-        address TEXT,
-        source TEXT NOT NULL DEFAULT 'manual' CHECK (source IN ('manual','chain')),
-        status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','approved','rejected')),
-        note TEXT,
-        created_at INTEGER NOT NULL,
-        reviewed_at INTEGER
-      );
-      INSERT INTO deposits_new (id, user_id, amount, network, txid, status, note, created_at, reviewed_at)
-        SELECT id, user_id, amount, network, txid, status, note, created_at, reviewed_at FROM deposits;
-      DROP TABLE deposits;
-      ALTER TABLE deposits_new RENAME TO deposits;
-      CREATE UNIQUE INDEX deposits_txid_address ON deposits(txid, COALESCE(address, ''));
-
-      CREATE TABLE withdrawals_new (
-        id INTEGER PRIMARY KEY,
-        user_id INTEGER NOT NULL REFERENCES users(id),
-        amount INTEGER NOT NULL CHECK (amount > 0),
-        fee INTEGER NOT NULL,
-        network TEXT NOT NULL,
-        address TEXT NOT NULL,
-        status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','sending','sent','failed','rejected')),
-        txid TEXT,
-        tx_expires_at INTEGER,
-        auto INTEGER NOT NULL DEFAULT 0,
-        attempts INTEGER NOT NULL DEFAULT 0,
-        note TEXT,
-        created_at INTEGER NOT NULL,
-        reviewed_at INTEGER
-      );
-      INSERT INTO withdrawals_new (id, user_id, amount, fee, network, address, status, txid, note, created_at, reviewed_at)
-        SELECT id, user_id, amount, fee, network, address, status, txid, note, created_at, reviewed_at FROM withdrawals;
-      DROP TABLE withdrawals;
-      ALTER TABLE withdrawals_new RENAME TO withdrawals;
-      CREATE INDEX withdrawals_status ON withdrawals(status);
-
-      CREATE TABLE deposit_addresses (
-        user_id INTEGER PRIMARY KEY REFERENCES users(id),
-        address TEXT NOT NULL UNIQUE,
-        derivation_index INTEGER NOT NULL UNIQUE,
-        watch_until INTEGER NOT NULL DEFAULT 0,
-        scanned_until INTEGER NOT NULL DEFAULT 0,
-        last_scan_at INTEGER NOT NULL DEFAULT 0,
-        needs_sweep INTEGER NOT NULL DEFAULT 0,
-        created_at INTEGER NOT NULL
-      );
-
-      -- Internal chain movements: TRX top-ups to deposit addresses and USDT sweeps out of them.
-      CREATE TABLE sweeps (
-        id INTEGER PRIMARY KEY,
-        user_id INTEGER NOT NULL REFERENCES users(id),
-        kind TEXT NOT NULL CHECK (kind IN ('topup','sweep')),
-        from_address TEXT NOT NULL,
-        to_address TEXT NOT NULL,
-        amount TEXT NOT NULL,
-        txid TEXT NOT NULL,
-        tx_expires_at INTEGER NOT NULL,
-        status TEXT NOT NULL CHECK (status IN ('sending','confirmed','failed')),
-        note TEXT,
-        created_at INTEGER NOT NULL
-      );
-      CREATE INDEX sweeps_status ON sweeps(status);
-    `);
-  },
-  // 3: security & compliance — staff roles, KYC tiers, phone/TOTP verification, alerts, security events
-  (db) => {
-    db.exec(`
-      CREATE TABLE users_new (
-        id INTEGER PRIMARY KEY,
-        username TEXT NOT NULL UNIQUE COLLATE NOCASE,
-        phone TEXT,
-        phone_verified_at INTEGER,
-        display_name TEXT NOT NULL,
-        password_hash TEXT NOT NULL,
-        password_changed_at INTEGER,
-        role TEXT NOT NULL DEFAULT 'user' CHECK (role IN ('user','admin','finance','support')),
-        is_blocked INTEGER NOT NULL DEFAULT 0,
-        kyc_tier INTEGER NOT NULL DEFAULT 0 CHECK (kyc_tier BETWEEN 0 AND 3),
-        totp_secret TEXT,
-        totp_pending TEXT,
-        totp_enabled_at INTEGER,
-        totp_last_step INTEGER NOT NULL DEFAULT 0,
-        failed_logins INTEGER NOT NULL DEFAULT 0,
-        locked_until INTEGER NOT NULL DEFAULT 0,
-        created_at INTEGER NOT NULL
-      );
-      INSERT INTO users_new (id, username, phone, display_name, password_hash, role, is_blocked, created_at)
-        SELECT id, username, phone, display_name, password_hash, role, is_blocked, created_at FROM users;
-      DROP TABLE users;
-      ALTER TABLE users_new RENAME TO users;
-      -- one verified phone number per account (limits multi-accounting)
-      CREATE UNIQUE INDEX users_verified_phone ON users(phone) WHERE phone_verified_at IS NOT NULL;
-
-      CREATE TABLE otp_codes (
-        id INTEGER PRIMARY KEY,
-        user_id INTEGER NOT NULL REFERENCES users(id),
-        purpose TEXT NOT NULL,
-        target TEXT,
-        code_hash TEXT NOT NULL,
-        attempts INTEGER NOT NULL DEFAULT 0,
-        expires_at INTEGER NOT NULL,
-        used_at INTEGER,
-        created_at INTEGER NOT NULL
-      );
-      CREATE INDEX otp_user ON otp_codes(user_id, purpose, id);
-
-      CREATE TABLE backup_codes (
-        id INTEGER PRIMARY KEY,
-        user_id INTEGER NOT NULL REFERENCES users(id),
-        code_hash TEXT NOT NULL,
-        used_at INTEGER
-      );
-      CREATE INDEX backup_user ON backup_codes(user_id);
-
-      CREATE TABLE login_challenges (
-        token_hash TEXT PRIMARY KEY,
-        user_id INTEGER NOT NULL REFERENCES users(id),
-        attempts INTEGER NOT NULL DEFAULT 0,
-        expires_at INTEGER NOT NULL
-      );
-
-      CREATE TABLE security_events (
-        id INTEGER PRIMARY KEY,
-        user_id INTEGER NOT NULL REFERENCES users(id),
-        kind TEXT NOT NULL,
-        ip TEXT,
-        user_agent TEXT,
-        created_at INTEGER NOT NULL
-      );
-      CREATE INDEX security_events_user ON security_events(user_id, id);
-
-      CREATE TABLE kyc_submissions (
-        id INTEGER PRIMARY KEY,
-        user_id INTEGER NOT NULL REFERENCES users(id),
-        doc_type TEXT NOT NULL CHECK (doc_type IN ('tazkira','passport')),
-        full_name TEXT NOT NULL,
-        doc_number TEXT NOT NULL,
-        status TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft','pending','approved','rejected')),
-        tier_granted INTEGER,
-        reason TEXT,
-        reviewer_id INTEGER REFERENCES users(id),
-        created_at INTEGER NOT NULL,
-        submitted_at INTEGER,
-        reviewed_at INTEGER
-      );
-      CREATE INDEX kyc_status ON kyc_submissions(status, id);
-
-      -- Document images, stored encrypted on disk; only metadata lives here.
-      CREATE TABLE kyc_files (
-        id INTEGER PRIMARY KEY,
-        submission_id INTEGER NOT NULL REFERENCES kyc_submissions(id),
-        kind TEXT NOT NULL CHECK (kind IN ('front','back','selfie')),
-        path TEXT NOT NULL,
-        mime TEXT NOT NULL,
-        size INTEGER NOT NULL,
-        sha256 TEXT NOT NULL,
-        created_at INTEGER NOT NULL,
-        UNIQUE (submission_id, kind)
-      );
-
-      CREATE TABLE alerts (
-        id INTEGER PRIMARY KEY,
-        user_id INTEGER NOT NULL REFERENCES users(id),
-        rule TEXT NOT NULL,
-        severity TEXT NOT NULL CHECK (severity IN ('info','low','medium','high')),
-        details TEXT NOT NULL,
-        status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open','closed')),
-        note TEXT,
-        closed_by INTEGER REFERENCES users(id),
-        created_at INTEGER NOT NULL,
-        closed_at INTEGER
-      );
-      CREATE INDEX alerts_status ON alerts(status, id);
-    `);
-  },
-];
-
-function migrate(db) {
-  const current = db.prepare('PRAGMA user_version').get().user_version;
-  for (let v = current; v < MIGRATIONS.length; v++) {
-    db.exec('PRAGMA foreign_keys = OFF; BEGIN IMMEDIATE');
-    try {
-      MIGRATIONS[v](db);
-      db.exec(`PRAGMA user_version = ${v + 1}; COMMIT`);
-    } catch (err) {
-      db.exec('ROLLBACK');
-      throw err;
-    } finally {
-      db.exec('PRAGMA foreign_keys = ON');
-    }
+// `?` → `$n`, skipping quoted strings.
+function toPg(sql) {
+  let n = 0;
+  let out = '';
+  let quote = null;
+  for (const ch of sql) {
+    if (quote) {
+      if (ch === quote) quote = null;
+      out += ch;
+    } else if (ch === "'" || ch === '"') {
+      quote = ch;
+      out += ch;
+    } else if (ch === '?') {
+      out += `$${++n}`;
+    } else out += ch;
   }
+  return out;
 }
 
-function open(dbPath) {
-  if (dbPath !== ':memory:') fs.mkdirSync(path.dirname(dbPath), { recursive: true });
-  const db = new DatabaseSync(dbPath);
-  db.exec('PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000;');
-  migrate(db);
-
-  let depth = 0;
-  // Run fn inside a transaction; nested calls join the outer one.
-  db.tx = (fn) => {
-    if (depth > 0) return fn();
-    db.exec('BEGIN IMMEDIATE');
-    depth++;
-    try {
-      const out = fn();
-      db.exec('COMMIT');
-      return out;
-    } catch (err) {
-      db.exec('ROLLBACK');
-      throw err;
-    } finally {
-      depth--;
-    }
+// A FIFO async mutex (PGlite has a single session, so transactions must not interleave).
+function createMutex() {
+  let tail = Promise.resolve();
+  return (fn) => {
+    const run = tail.then(fn, fn);
+    tail = run.then(() => {}, () => {});
+    return run;
   };
+}
+
+function sslOptions(config) {
+  if (!config.databaseUrl || /sslmode=disable|localhost|127\.0\.0\.1/.test(config.databaseUrl)) return undefined;
+  if (config.databaseCaPath) return { ca: fs.readFileSync(config.databaseCaPath, 'utf8'), rejectUnauthorized: true };
+  if (config.databaseCa) return { ca: config.databaseCa, rejectUnauthorized: true };
+  return { rejectUnauthorized: false };
+}
+
+async function openDb(config, { log = console } = {}) {
+  const als = new AsyncLocalStorage();
+  let backend;
+
+  if (config.databaseUrl) {
+    const pg = require('pg');
+    pg.types.setTypeParser(INT8, (v) => Number(v));
+    pg.types.setTypeParser(NUMERIC, (v) => Number(v));
+    const ssl = sslOptions(config);
+    if (ssl && !ssl.ca) {
+      const msg = '[db] TLS without certificate verification; set DATABASE_CA_PATH to the Supabase CA certificate';
+      if (config.nodeEnv === 'production') log.warn(msg);
+    }
+    // node-postgres lets ssl* URL parameters override the `ssl` object, so drop them when we set TLS ourselves.
+    const url = new URL(config.databaseUrl);
+    if (ssl) for (const k of ['sslmode', 'sslrootcert', 'sslcert', 'sslkey']) url.searchParams.delete(k);
+    const pool = new pg.Pool({ connectionString: url.toString(), ssl, max: config.databasePoolSize || 10 });
+    pool.on('error', (err) => log.error('[db] idle client error', err.message));
+    // Each new connection gets the app schema first (a startup `options` parameter is not
+    // forwarded by every pooler, so it is set explicitly).
+    const ready = new WeakSet();
+    const acquire = async () => {
+      const client = await pool.connect();
+      if (!ready.has(client)) {
+        try {
+          await client.query('SET search_path TO app, public');
+        } catch (err) {
+          client.release(err);
+          throw err;
+        }
+        ready.add(client);
+      }
+      return client;
+    };
+    const withClient = async (fn) => {
+      const client = await acquire();
+      try {
+        return await fn(client);
+      } finally {
+        client.release();
+      }
+    };
+    backend = {
+      kind: 'pg',
+      query: (sql, params) => withClient((c) => c.query(sql, params)),
+      async tx(fn) {
+        const client = await acquire();
+        try {
+          await client.query('BEGIN');
+          const out = await fn((sql, params) => client.query(sql, params));
+          await client.query('COMMIT');
+          return out;
+        } catch (err) {
+          await client.query('ROLLBACK').catch(() => {});
+          throw err;
+        } finally {
+          client.release();
+        }
+      },
+      exec: (sql) => withClient((c) => c.query(sql)),
+      // Session advisory lock held on a dedicated connection (released if the process dies).
+      async leader(key) {
+        const client = await acquire();
+        const { rows } = await client.query('SELECT pg_try_advisory_lock($1) AS ok', [key]);
+        if (rows[0].ok) return { release: () => client.query('SELECT pg_advisory_unlock($1)', [key]).finally(() => client.release()) };
+        client.release();
+        return null;
+      },
+      close: () => pool.end(),
+    };
+  } else {
+    const { PGlite } = require('@electric-sql/pglite');
+    const dir = config.pgliteDir && config.pgliteDir !== ':memory:' ? config.pgliteDir : undefined;
+    if (dir) fs.mkdirSync(dir, { recursive: true });
+    const parsers = { [INT8]: (v) => Number(v), [NUMERIC]: (v) => Number(v) };
+    const lite = new PGlite(dir, { parsers });
+    await lite.waitReady;
+    await lite.exec('CREATE SCHEMA IF NOT EXISTS app; SET search_path TO app, public;');
+    const lock = createMutex();
+    // Without params: simple protocol (allows multi-statement migrations).
+    const q = (sql, params) =>
+      params === undefined
+        ? lite.exec(sql).then((r) => ({ rows: r.at(-1)?.rows || [], rowCount: 0 }))
+        : lite.query(sql, params, { parsers }).then((r) => ({ rows: r.rows, rowCount: r.affectedRows ?? r.rows.length }));
+    backend = {
+      kind: 'pglite',
+      query: (sql, params) => lock(() => q(sql, params)),
+      tx: (fn) =>
+        lock(async () => {
+          await lite.query('BEGIN');
+          try {
+            const out = await fn(q);
+            await lite.query('COMMIT');
+            return out;
+          } catch (err) {
+            await lite.query('ROLLBACK').catch(() => {});
+            throw err;
+          }
+        }),
+      exec: (sql) => lock(() => lite.exec(sql)),
+      leader: async () => ({ release: async () => {} }),
+      close: () => lite.close(),
+    };
+  }
+
+  const run = async (sql, params = []) => {
+    const store = als.getStore();
+    const text = toPg(sql);
+    const r = store ? await store.q(text, params) : await backend.query(text, params);
+    return { rows: r.rows, rowCount: r.rowCount };
+  };
+
+  const db = {
+    kind: backend.kind,
+    run,
+    query: async (sql, params) => (await run(sql, params)).rows,
+    one: async (sql, params) => (await run(sql, params)).rows[0],
+    tx(fn) {
+      if (als.getStore()) return fn(); // join the surrounding transaction
+      return backend.tx((q) => als.run({ q }, fn));
+    },
+    leader: (key) => backend.leader(key),
+    close: () => backend.close(),
+  };
+
+  const quiet = !config.databaseUrl && (!config.pgliteDir || config.pgliteDir === ':memory:');
+  if (config.migrateOnStart !== false) await migrate(backend, quiet ? { warn() {} } : log);
   return db;
 }
 
-module.exports = { open };
+// Applies supabase/migrations/*.sql in order, recording them where the Supabase CLI does,
+// so `supabase db push` and this runner agree on what has been applied.
+async function migrate(backend, log = console) {
+  const files = fs.readdirSync(MIGRATIONS_DIR).filter((f) => /^\d+_.+\.sql$/.test(f)).sort();
+  await backend.exec(`
+    CREATE SCHEMA IF NOT EXISTS supabase_migrations;
+    CREATE TABLE IF NOT EXISTS supabase_migrations.schema_migrations (version text PRIMARY KEY, statements text[], name text);
+  `);
+  await backend.tx(async (q) => {
+    await q('SELECT pg_advisory_xact_lock(727170)'); // one migrator at a time
+    const done = new Set((await q('SELECT version FROM supabase_migrations.schema_migrations')).rows.map((r) => r.version));
+    for (const f of files) {
+      const [version, ...rest] = f.replace(/\.sql$/, '').split('_');
+      if (done.has(version)) continue;
+      const sql = fs.readFileSync(path.join(MIGRATIONS_DIR, f), 'utf8');
+      await q(sql);
+      await q('SET search_path TO app, public');
+      await q('INSERT INTO supabase_migrations.schema_migrations (version, name, statements) VALUES ($1, $2, $3)', [version, rest.join('_'), [sql]]);
+      log.warn(`[db] applied migration ${f}`);
+    }
+  });
+}
+
+module.exports = { openDb, toPg, migrate };

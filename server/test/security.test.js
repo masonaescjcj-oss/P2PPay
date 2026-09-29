@@ -165,7 +165,7 @@ test('login lockout and password change', async (t) => {
   for (let i = 0; i < 7; i++) assert.equal((await s.client().post('/auth/login', { username: 'lockme', password: 'nope-nope' })).data.error, 'invalid_credentials');
   assert.equal((await s.client().post('/auth/login', { username: 'lockme', password: 'nope-nope' })).data.error, 'account_locked');
   assert.equal((await s.client().post('/auth/login', { username: 'lockme', password: 'password123' })).data.error, 'account_locked');
-  s.app.locals.db.prepare("UPDATE users SET locked_until = 0 WHERE username = 'lockme'").run();
+  await s.db.run("UPDATE users SET locked_until = 0 WHERE username = 'lockme'");
 
   assert.equal((await c.post('/me/password', { current: 'wrong', next: 'newpassword1' })).data.error, 'invalid_password');
   assert.equal((await c.post('/me/password', { current: 'password123', next: 'short' })).data.error, 'weak_password');
@@ -236,7 +236,7 @@ test('KYC documents: encrypted at rest, staff review, tier upgrade', async (t) =
   assert.equal((await c.upload(`/kyc/submission/${sub.id}/files/back`, PNG)).data.error, 'kyc_not_editable');
 
   // on disk the files are ciphertext
-  const files = fs.readdirSync(s.config.kycDir);
+  const files = fs.readdirSync(s.config.kycDir, { recursive: true }).filter((f) => f.endsWith('.bin'));
   assert.equal(files.length, 2);
   for (const f of files) {
     const onDisk = fs.readFileSync(path.join(s.config.kycDir, f));
