@@ -58,7 +58,7 @@ function createSecurity(db, config, { box, sms, alerts, log = console }) {
         [userId, purpose, phone, codeHash(userId, purpose, code), now() + OTP_TTL, now()]
       );
     });
-    await sms(phone, `P2PPay: کد تأیید شما ${code} — این کد را به هیچ‌کس ندهید. / Your code: ${code}`);
+    await sms(phone, `${config.appName || 'P2PPay'}: کد تأیید شما ${code} — این کد را به هیچ‌کس ندهید. / Your code: ${code}`);
     await event(userId, `code_sent_${purpose}`, req);
   }
 
@@ -115,7 +115,7 @@ function createSecurity(db, config, { box, sms, alerts, log = console }) {
     if (u.totp_enabled_at) throw conflict('totp_already_enabled');
     const secret = totp.generateSecret();
     await db.run('UPDATE users SET totp_pending = ? WHERE id = ? AND totp_enabled_at IS NULL', [seal(secret), userId]);
-    return { secret, uri: totp.otpauthUri(secret, u.username) };
+    return { secret, uri: totp.otpauthUri(secret, u.username, config.appName || 'P2PPay') };
   }
 
   // A code is accepted once: the step only moves forward, so a replay (even a parallel one) fails.

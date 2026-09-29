@@ -5,6 +5,9 @@ import { fileURLToPath } from 'node:url'
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 
+// Product name for the build (VITE_APP_NAME=AriaPay npm run build:demo); also fills %VITE_APP_NAME% in index.html.
+process.env.VITE_APP_NAME ||= 'P2PPay'
+
 const here = path.dirname(fileURLToPath(import.meta.url))
 const shim = (f) => path.join(here, 'demo', 'shims', f)
 

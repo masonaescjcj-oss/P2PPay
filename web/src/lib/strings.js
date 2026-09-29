@@ -1,4 +1,5 @@
 // UI strings. Dari (fa) is the primary language; English (en) is the fallback.
+import { BRAND } from './brand.js'
 export const strings = {
   fa: {
     brandTagline: 'مستقیم با افغانی',
@@ -1313,7 +1314,7 @@ Object.assign(strings.fa, {
   supportPhone: 'تلفن / واتس‌اپ',
   supportEmail: 'ایمیل',
   supportHours: 'ساعات پاسخگویی',
-  supportSafety: 'کارکنان P2PPay هرگز رمز عبور، کد تأیید یا کدهای پشتیبان شما را نمی‌خواهند و هرگز نمی‌گویند بیرون از اپ پول یا تتر بفرستید.',
+  supportSafety: `کارکنان ${BRAND} هرگز رمز عبور، کد تأیید یا کدهای پشتیبان شما را نمی‌خواهند و هرگز نمی‌گویند بیرون از اپ پول یا تتر بفرستید.`,
   installApp: 'نصب روی گوشی',
   iosStep1: 'این صفحه را در Safari باز کنید.',
   iosStep2: 'دکمهٔ اشتراک‌گذاری (مربع با فلش رو به بالا) را بزنید.',
@@ -1343,7 +1344,7 @@ Object.assign(strings.en, {
   supportPhone: 'Phone / WhatsApp',
   supportEmail: 'Email',
   supportHours: 'Support hours',
-  supportSafety: 'P2PPay staff will never ask for your password, verification codes or backup codes, and will never tell you to send money or USDT outside the app.',
+  supportSafety: `${BRAND} staff will never ask for your password, verification codes or backup codes, and will never tell you to send money or USDT outside the app.`,
   installApp: 'Install on phone',
   iosStep1: 'Open this page in Safari.',
   iosStep2: 'Tap the Share button (a square with an arrow).',

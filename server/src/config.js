@@ -54,6 +54,8 @@ module.exports = {
   fiat: 'AFN',
   paymentMethods: ['hesabpay', 'mpaisa', 'mhawala', 'bank', 'hawala', 'cash'],
 
+  // Product name in SMS texts and the authenticator app entry.
+  appName: process.env.APP_NAME || 'P2PPay',
   nodeEnv: process.env.NODE_ENV || 'development',
   // 64 hex chars (32 bytes). Encrypts TOTP secrets and KYC documents. Required in production.
   dataKey: process.env.DATA_ENCRYPTION_KEY || '',

@@ -3,6 +3,7 @@
 // through a fetch bridge instead of the network. For testing only: no real money, no real SMS.
 import appModule from '../../server/src/app.js'
 import baseConfig from '../../server/src/config.js'
+import { BRAND } from '../src/lib/brand.js'
 import authModule from '../../server/src/auth.js'
 
 const { createApp } = appModule
@@ -238,6 +239,7 @@ export async function startDemoServer({ onStatus } = {}) {
     cookieSecure: false,
     storage: { provider: 'local' },
     tron: { ...baseConfig.tron, network: 'off' },
+    appName: BRAND,
     beta: { inviteOnly: false, maxTradeMicro: 100_000_000, maxOfferMicro: 500_000_000, label: '' },
   }
   const quiet = { log() {}, info() {}, warn: (...a) => console.debug(...a), error: (...a) => console.error(...a) }

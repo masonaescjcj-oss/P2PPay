@@ -1,3 +1,5 @@
+import { BRAND } from '../lib/brand.js'
+
 export function TetherMark({ size = 20 }) {
   return (
     <svg width={size} height={size} viewBox="0 0 32 32" aria-hidden="true">
@@ -20,9 +22,11 @@ export function StarMark({ size = 34, color = 'var(--accent-text)' }) {
 }
 
 export function Wordmark() {
+  // "P2PPay" highlights the 2; other names ending in "Pay" (e.g. AriaPay) highlight "Pay".
+  const [head, accent, tail] = BRAND === 'P2PPay' ? ['P', '2', 'PPay'] : BRAND.endsWith('Pay') ? [BRAND.slice(0, -3), 'Pay', ''] : [BRAND, '', '']
   return (
     <div dir="ltr" style={{ fontSize: 22, fontWeight: 800, letterSpacing: 0.2 }}>
-      P<span style={{ color: 'var(--accent-text)' }}>2</span>PPay
+      {head}<span style={{ color: 'var(--accent-text)' }}>{accent}</span>{tail}
     </div>
   )
 }

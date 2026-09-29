@@ -6,7 +6,7 @@ const { createApp } = require('./app');
 async function main() {
   const app = await createApp(config);
   const server = app.listen(config.port, () => {
-    console.log(`P2PPay listening on http://localhost:${config.port}`);
+    console.log(`${config.appName} listening on http://localhost:${config.port}`);
     if (!config.adminUsername) console.log('Tip: set ADMIN_USERNAME / ADMIN_PASSWORD to create an admin account.');
   });
   // Graceful shutdown (rolling deploys): stop accepting, finish requests, release the DB and chain lock.

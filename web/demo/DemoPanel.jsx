@@ -6,12 +6,13 @@ import { api } from '../src/lib/api.js'
 import { useAuth } from '../src/lib/auth.jsx'
 import { copyText } from '../src/lib/hooks.js'
 import { usePrefs } from '../src/lib/prefs.jsx'
+import { BRAND } from '../src/lib/brand.js'
 import { ADMIN, inbox, resetAll, topUp } from './server.js'
 
 const TEXT = {
   fa: {
     badge: 'نسخهٔ آزمایشی',
-    title: 'نسخهٔ آزمایشی P2PPay',
+    title: `نسخهٔ آزمایشی ${BRAND}`,
     intro: 'این نسخه کامل در مرورگر شما اجرا می‌شود: همان کد سرور، با پایگاه‌دادهٔ Postgres داخل مرورگر. تتر و پیامک‌ها آزمایشی‌اند و داده‌ها فقط در همین مرورگر می‌مانند.',
     topUp: '۵۰۰ تتر آزمایشی به کیف پولم',
     topUpDone: '۵۰۰ تتر آزمایشی واریز شد',
@@ -35,7 +36,7 @@ const TEXT = {
   },
   en: {
     badge: 'Test version',
-    title: 'P2PPay test version',
+    title: `${BRAND} test version`,
     intro: 'This version runs entirely in your browser: the same server code, with a Postgres database inside the browser. USDT and SMS are test-only, and the data stays in this browser.',
     topUp: 'Add 500 test USDT to my wallet',
     topUpDone: '500 test USDT deposited',
