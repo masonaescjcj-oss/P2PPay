@@ -58,6 +58,10 @@
 
   --tether: #26a17b;
   --danger-dot: #e8705a;
+
+  /* Chart series (validated for lightness, CVD separation and contrast on --surface) */
+  --chart-1: #b8862a;
+  --chart-2: #6a86ee;
 }
 
 [data-theme='light'] {
@@ -101,4 +105,7 @@
   --blue-text: #3552c9;
   --blue-tint: #e4eafc;
   --blue-tint-text: #2f47b0;
+
+  --chart-1: #a8760f;
+  --chart-2: #3552c9;
 }

@@ -84,6 +84,14 @@ module.exports = {
   },
   alertLargeTradeMicro: int('ALERT_LARGE_TRADE_MICRO', 5_000_000_000),
 
+  // Closed beta: sign-up only with an invite code, and small caps per trade and per offer (0 = no cap).
+  beta: {
+    inviteOnly: process.env.BETA_INVITE_ONLY === '1',
+    maxTradeMicro: int('BETA_MAX_TRADE_MICRO', 0),
+    maxOfferMicro: int('BETA_MAX_OFFER_MICRO', 0),
+    label: process.env.BETA_LABEL || '',
+  },
+
   // On-chain mode. 'off' keeps the manual flow (shared DEPOSIT_ADDRESS, admin records txids).
   tron: {
     network,

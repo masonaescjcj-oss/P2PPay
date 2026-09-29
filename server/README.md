@@ -62,7 +62,7 @@ Errors are `{"error": "<code>"}` with an HTTP status; the web app maps codes to 
 | Withdrawals | Every withdrawal needs a fresh second factor: the authenticator code, or an SMS code from `POST /withdrawals/code`. Backup codes are not accepted here. |
 | KYC tiers | 0 = registered (deposit only), 1 = phone verified, 2 = tazkira/passport + selfie approved by staff, 3 = merchant. Each tier has a rolling 24h limit for trade volume (checked for **both** sides of a trade) and withdrawals (`LIMIT_TIER*_MICRO`). Posting offers needs tier 1. |
 | KYC documents | `POST /kyc/submission` → upload `front`, `back` (optional), `selfie` as raw images (JPEG/PNG/WebP, magic bytes checked, ≤ 5 MB; the web app downsizes photos) → `POST /kyc/submission/:id/submit`. Files are AES-256-GCM encrypted in `KYC_DIR`; staff view them through `GET /admin/kyc/:id/files/:kind` only. |
-| Staff roles | `admin` (everything, incl. staff management), `finance` (deposits, withdrawals, hot wallet, audit log), `support` (disputes, users, KYC, alerts). With `REQUIRE_STAFF_2FA=1` (default) staff must have 2FA on. Nobody can review their own request or change their own role; role changes sign the user out. |
+| Staff roles | `admin` (everything, incl. staff management), `finance` (deposits, withdrawals, hot wallet, audit log), `support` (disputes, users, KYC, alerts, beta: invites, feedback, error reports). With `REQUIRE_STAFF_2FA=1` (default) staff must have 2FA on. Nobody can review their own request or change their own role; role changes sign the user out. |
 | Alerts | Rules raise one open alert per user and rule: `pass_through` (deposit leaves again within 2h without trading), `shared_address` (withdrawal address used by another account), `large_trade`, `many_cancels`, `many_disputes`, `auth_failures`. Staff close them with a note; every staff decision is in the audit log. |
 | Data key | `DATA_ENCRYPTION_KEY` (required in production) encrypts TOTP secrets and KYC files and keys the code HMACs. Back it up: without it those records cannot be read. |
 
@@ -71,7 +71,9 @@ Errors are `{"error": "<code>"}` with an HTTP status; the web app maps codes to 
 | Method | Path | Who (admin routes: permission) | Body / query |
 |---|---|---|---|
 | GET | `/config` | public | – |
-| POST | `/auth/register` | public | `username, password, displayName?, phone?` |
+| POST | `/auth/register` | public | `username, password, displayName?, inviteCode?` (required when `BETA_INVITE_ONLY=1`) |
+| GET, POST | `/feedback` | user | own feedback with staff replies / `kind (bug·idea·question·other), message, page?` |
+| POST | `/client-errors` | public | `message, stack?, page?` — browser crash reports (rate limited, grouped) |
 | POST | `/auth/login` | public | `username, password` |
 | POST | `/auth/login/2fa` | public | `challenge, code` |
 | POST | `/auth/logout` | user | – |
@@ -120,6 +122,13 @@ Errors are `{"error": "<code>"}` with an HTTP status; the web app maps codes to 
 | POST | `/admin/kyc/:id/approve\|reject` | kyc | `tier` / `reason` |
 | GET | `/admin/alerts` | alerts | `status?` |
 | POST | `/admin/alerts/:id/close` | alerts | `note` |
+| GET | `/admin/beta` | beta | beta metrics: users, trades, completion/dispute rate, volume, median time, 14-day series |
+| GET, POST | `/admin/invites` | beta | list / `label?, maxUses, expiresInDays?` → the code, shown once |
+| POST | `/admin/invites/:id/revoke` | beta | – |
+| GET | `/admin/feedback` | beta | `status?` (new·seen·done) |
+| POST | `/admin/feedback/:id` | beta | `status?, reply?` (the reply is shown to the user) |
+| GET | `/admin/errors` | beta | `all=1` includes resolved; browser + server errors grouped by fingerprint |
+| POST | `/admin/errors/:id/resolve` | beta | – (reopens by itself if the error happens again) |
 
 Payment method codes: `hesabpay, mpaisa, mhawala, bank, hawala, cash`.
 

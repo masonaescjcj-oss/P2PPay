@@ -6,7 +6,7 @@ const { bad, conflict } = require('../errors');
 const { hashPassword, rateLimit } = require('../auth');
 
 function accountRoutes(api, ctx) {
-  const { db, auth, security, kyc, market, u } = ctx;
+  const { db, config, auth, security, kyc, market, beta, u } = ctx;
   const authLimit = rateLimit({ windowMs: 15 * 60_000, max: 20 });
   const codeLimit = rateLimit({ windowMs: 15 * 60_000, max: 10 });
   const loginResponse = (user) => ({ id: user.id, username: user.username, displayName: user.display_name, role: user.role });
@@ -17,12 +17,20 @@ function accountRoutes(api, ctx) {
     const displayName = String(req.body.displayName ?? '').trim().slice(0, 40) || username;
     if (!/^[a-zA-Z0-9_]{3,24}$/.test(username)) throw bad('invalid_username');
     if (password.length < 8 || password.length > 200) throw bad('weak_password');
+    const invite = String(req.body.inviteCode ?? '').trim();
+    if (config.beta?.inviteOnly && !invite) throw bad('invite_required');
+    const passwordHash = hashPassword(password);
+    // The invite slot and the account are one transaction: a failed sign-up gives the slot back.
     // The unique index on lower(username) settles a race between two identical sign-ups.
-    const row = await db.one(
-      'INSERT INTO users (username, display_name, password_hash, created_at) VALUES (?, ?, ?, ?) ON CONFLICT DO NOTHING RETURNING id',
-      [username, displayName, hashPassword(password), Date.now()]
-    );
-    if (!row) throw conflict('username_taken');
+    const row = await db.tx(async () => {
+      const inviteId = invite ? await beta.consumeInvite(invite) : null;
+      const r = await db.one(
+        'INSERT INTO users (username, display_name, password_hash, invite_id, created_at) VALUES (?, ?, ?, ?, ?) ON CONFLICT DO NOTHING RETURNING id',
+        [username, displayName, passwordHash, inviteId, Date.now()]
+      );
+      if (!r) throw conflict('username_taken');
+      return r;
+    });
     const id = row.id;
     await security.event(id, 'registered', req);
     await auth.login(res, id);

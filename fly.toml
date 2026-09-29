@@ -23,6 +23,13 @@ primary_region = "bom"
   REQUIRE_STAFF_2FA = "1"
   # nile (testnet) until the beta is signed off; mainnet also needs TRON_MAINNET_CONFIRM=yes
   TRON_NETWORK = "nile"
+  # Closed beta (BETA.md): invite-only sign-up, 100 USDT per trade, 500 USDT per offer, low tier limits
+  BETA_INVITE_ONLY = "1"
+  BETA_MAX_TRADE_MICRO = "100000000"
+  BETA_MAX_OFFER_MICRO = "500000000"
+  LIMIT_TIER1_MICRO = "200000000"
+  LIMIT_TIER2_MICRO = "1000000000"
+  LIMIT_TIER3_MICRO = "5000000000"
 
 [http_service]
   internal_port = 8080

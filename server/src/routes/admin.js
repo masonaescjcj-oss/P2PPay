@@ -7,7 +7,7 @@ const { ROLES, permsOf } = require('../security/roles');
 const m = require('../money');
 
 function adminRoutes(api, ctx) {
-  const { db, market, funds, chain, chainOn, kyc, alerts, auth, id } = ctx;
+  const { db, market, funds, chain, chainOn, kyc, alerts, beta, auth, id } = ctx;
   const perm = auth.requirePerm;
 
   const noteOf = (req) => (req.body?.note ? String(req.body.note).slice(0, 500) : null);
@@ -35,6 +35,8 @@ function adminRoutes(api, ctx) {
       openTrades: await count("SELECT COUNT(*) n FROM trades WHERE status IN ('pending_payment','paid','disputed')"),
       pendingKyc: await count("SELECT COUNT(*) n FROM kyc_submissions WHERE status = 'pending'"),
       openAlerts: await alerts.openCount(),
+      newFeedback: await count("SELECT COUNT(*) n FROM feedback WHERE status = 'new'"),
+      openErrors: await count('SELECT COUNT(*) n FROM app_errors WHERE resolved_at IS NULL'),
       userBalances: m.fmtUsdt(sum.a + sum.l),
       fees: m.fmtUsdt(fees),
     });
@@ -157,6 +159,34 @@ function adminRoutes(api, ctx) {
     });
     res.json({ ok: true });
   });
+  // ---------- closed beta ----------
+  api.get('/admin/beta', perm('beta'), async (_req, res) => res.json(await beta.stats()));
+  api.get('/admin/invites', perm('beta'), async (_req, res) => res.json(await beta.listInvites()));
+  api.post('/admin/invites', perm('beta'), async (req, res) => {
+    const inv = await db.tx(async () => {
+      const out = await beta.createInvite(req.user.id, req.body);
+      await logAction(req, 'invite_create', 'invite', out.id);
+      return out;
+    });
+    res.status(201).json(inv);
+  });
+  api.post('/admin/invites/:id/revoke', perm('beta'), async (req, res) => {
+    const iid = id(req);
+    await audited(req, 'invite_revoke', 'invite', iid, () => beta.revokeInvite(iid));
+    res.json({ ok: true });
+  });
+  api.get('/admin/feedback', perm('beta'), async (req, res) => res.json(await beta.listFeedback(req.query.status || null)));
+  api.post('/admin/feedback/:id', perm('beta'), async (req, res) => {
+    const fid = id(req);
+    const action = req.body.reply !== undefined ? 'feedback_reply' : 'feedback_status';
+    res.json(await audited(req, action, 'feedback', fid, () => beta.updateFeedback(fid, req.user.id, req.body)));
+  });
+  api.get('/admin/errors', perm('beta'), async (req, res) => res.json(await beta.listErrors(req.query.all !== '1')));
+  api.post('/admin/errors/:id/resolve', perm('beta'), async (req, res) => {
+    await beta.resolveError(id(req));
+    res.json({ ok: true });
+  });
+
   api.get('/admin/actions', perm('audit'), async (_req, res) => {
     const rows = await db.query(
       `SELECT a.*, u.username AS admin_username FROM admin_actions a JOIN users u ON u.id = a.admin_id

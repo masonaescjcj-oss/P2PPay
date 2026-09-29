@@ -62,7 +62,9 @@ export function BalanceCard({ wallet, afnPrice }) {
 
 export default function Home() {
   const { t } = usePrefs()
-  const { user } = useAuth()
+  const { user, config } = useAuth()
+  const beta = config?.beta
+  const betaOn = !!(beta && (beta.inviteOnly || beta.maxTrade || beta.label))
   const wallet = useApi('/wallet', { interval: 15000 })
   const trades = useApi('/trades', { interval: 10000 })
   const buyOffers = useApi('/offers?side=buy')
@@ -95,6 +97,17 @@ export default function Home() {
             <Icon name="shieldCheck" size={20} />
             <span className="grow">{t('verifyToTrade')}</span>
             <span className="strong t-gold">{t('goVerify')}</span>
+          </Link>
+        )}
+
+        {betaOn && (
+          <Link to="/profile/feedback" state={{ from: '/' }} className="note blue beta-note" style={{ alignItems: 'center' }}>
+            <span className="pill blue" style={{ height: 22 }}>{t('betaBadge')}</span>
+            <span className="grow stack" style={{ fontSize: 13, lineHeight: 1.8, gap: 0 }}>
+              <span>{beta.label || t('betaNote')}</span>
+              {beta.maxTrade && <span className="caption">{t('betaCap', { max: beta.maxTrade })}</span>}
+            </span>
+            <span className="strong" style={{ color: 'var(--blue-text)', whiteSpace: 'nowrap' }}>{t('sendFeedbackShort')}</span>
           </Link>
         )}
 

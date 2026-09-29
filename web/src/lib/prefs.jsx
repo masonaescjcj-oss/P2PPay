@@ -53,7 +53,7 @@ export function PrefsProvider({ children }) {
     [lang]
   )
   const pm = useCallback((code) => paymentMethodLabels[lang][code] ?? code, [lang])
-  const errText = useCallback((err) => t(`err_${err?.code || 'server_error'}`), [t])
+  const errText = useCallback((err) => t(`err_${err?.code || 'server_error'}`, err?.data || undefined), [t])
 
   const value = useMemo(() => ({ lang, setLang, theme, setTheme, t, pm, errText }), [lang, setLang, theme, setTheme, t, pm, errText])
   return <PrefsContext.Provider value={value}>{children}</PrefsContext.Provider>

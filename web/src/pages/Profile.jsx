@@ -84,6 +84,7 @@ export default function Profile() {
             </span>
           </Row>
           <Row icon="shieldCheck" tone="green" label={t('securityTitle')} value={user.totpEnabled ? '2FA ✓' : undefined} to="/profile/security" />
+          <Row icon="chat" tone="blue" label={t('feedbackTitle')} to="/profile/feedback" />
           <Row icon="headset" label={t('support')} value={t('soon')} />
         </section>
 

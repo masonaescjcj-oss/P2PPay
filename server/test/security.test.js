@@ -11,7 +11,6 @@ const { setup, TXID, ADDR } = require('./helpers');
 
 const PNG = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.from('fake image body')]);
 const JPG = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.from('selfie')]);
-const step = () => Math.floor(Date.now() / 30_000);
 
 test('TOTP matches RFC 6238 and refuses replays', () => {
   const key = Buffer.from('12345678901234567890');
@@ -19,9 +18,10 @@ test('TOTP matches RFC 6238 and refuses replays', () => {
     assert.equal(totp.hotp(key, Math.floor(t / 30), 8), want);
   }
   const s = totp.generateSecret();
-  const at = step();
-  assert.equal(totp.verifyTotp(s, totp.totp(s)), at);
-  assert.equal(totp.verifyTotp(s, totp.totp(s), { lastStep: at }), null);
+  const now = Date.now();
+  const at = Math.floor(now / 30_000);
+  assert.equal(totp.verifyTotp(s, totp.totp(s, now), { now }), at);
+  assert.equal(totp.verifyTotp(s, totp.totp(s, now), { now, lastStep: at }), null);
   assert.equal(totp.verifyTotp(s, '12345'), null);
   assert.equal(normalizePhone('0701234567'), '+93701234567');
   assert.equal(normalizePhone('۰۷۰۱۲۳۴۵۶۷'), '+93701234567');
@@ -109,7 +109,7 @@ test('authenticator 2FA: login challenge, backup codes, replay, disable, session
   const c = await s.user('twofa');
   const other = s.client();
   await other.post('/auth/login', { username: 'twofa', password: 'password123' });
-  const secret = await s.enableTotp(c);
+  await s.enableTotp(c);
   assert.equal(c.backupCodes.length, 10);
   assert.equal((await other.get('/me')).status, 401); // other sessions signed out
   assert.equal((await c.get('/me')).data.totpEnabled, true);
@@ -119,8 +119,8 @@ test('authenticator 2FA: login challenge, backup codes, replay, disable, session
   assert.equal(r1.data.twoFactor, true);
   assert.equal((await l.get('/me')).status, 401);
   assert.equal((await l.post('/auth/login/2fa', { challenge: r1.data.challenge, code: '000000' })).data.error, 'invalid_code');
-  // the code used to enable 2FA cannot be replayed
-  assert.equal((await l.post('/auth/login/2fa', { challenge: r1.data.challenge, code: totp.totp(secret) })).data.error, 'invalid_code');
+  // the code used to enable 2FA cannot be replayed (the exact code: a fresh one may already be a newer step)
+  assert.equal((await l.post('/auth/login/2fa', { challenge: r1.data.challenge, code: c.enableCode })).data.error, 'invalid_code');
   // a backup code works exactly once
   const backup = c.backupCodes[0];
   assert.equal((await l.post('/auth/login/2fa', { challenge: r1.data.challenge, code: backup })).status, 200);

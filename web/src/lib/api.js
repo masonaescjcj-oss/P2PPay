@@ -1,8 +1,10 @@
 export class ApiError extends Error {
-  constructor(status, code) {
+  // data: the full error body, e.g. { error: 'beta_trade_limit', max: '100' } — used to fill the message.
+  constructor(status, code, data = null) {
     super(code)
     this.status = status
     this.code = code
+    this.data = data
   }
 }
 
@@ -24,7 +26,7 @@ async function request(method, path, body) {
   } catch {
     // non-JSON response
   }
-  if (!res.ok) throw new ApiError(res.status, data?.error || 'server_error')
+  if (!res.ok) throw new ApiError(res.status, data?.error || 'server_error', data)
   return data
 }
 
@@ -45,7 +47,7 @@ export const api = {
       throw new ApiError(0, 'network_error')
     }
     const data = await res.json().catch(() => null)
-    if (!res.ok) throw new ApiError(res.status, data?.error || 'server_error')
+    if (!res.ok) throw new ApiError(res.status, data?.error || 'server_error', data)
     return data
   },
 }

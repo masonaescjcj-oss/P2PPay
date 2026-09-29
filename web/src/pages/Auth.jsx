@@ -1,21 +1,24 @@
 import { useState } from 'react'
-import { Link, Navigate, useLocation, useNavigate } from 'react-router-dom'
+import { Link, Navigate, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import Icon from '../components/Icon.jsx'
 import { useAuth } from '../lib/auth.jsx'
 import { usePrefs } from '../lib/prefs.jsx'
 
 export default function Auth({ mode }) {
   const { t, errText } = usePrefs()
-  const { user, login, loginSecondFactor, register } = useAuth()
+  const { user, config, login, loginSecondFactor, register } = useAuth()
+  const [params] = useSearchParams()
   const [challenge, setChallenge] = useState(null)
   const [code, setCode] = useState('')
   const navigate = useNavigate()
   const location = useLocation()
-  const [form, setForm] = useState({ username: '', password: '', displayName: '' })
+  // Invite links look like /register?invite=ABCD-EFGH
+  const [form, setForm] = useState(() => ({ username: '', password: '', displayName: '', inviteCode: params.get('invite') || '' }))
   const [show, setShow] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
   const isLogin = mode === 'login'
+  const inviteOnly = !!config?.beta?.inviteOnly
 
   // New accounts continue to verification; logins go back where they came from.
   if (user) return <Navigate to={isLogin ? location.state?.from || '/' : '/profile/verification'} replace />
@@ -36,7 +39,12 @@ export default function Auth({ mode }) {
           return
         }
       } else {
-        await register({ username: form.username.trim(), password: form.password, displayName: form.displayName.trim() || undefined })
+        await register({
+          username: form.username.trim(),
+          password: form.password,
+          displayName: form.displayName.trim() || undefined,
+          inviteCode: form.inviteCode.trim() || undefined,
+        })
         navigate('/profile/verification', { replace: true })
         return
       }
@@ -93,6 +101,16 @@ export default function Auth({ mode }) {
       </div>
 
       <form className="stack" style={{ gap: 16 }} onSubmit={submit} noValidate>
+        {!isLogin && (inviteOnly || form.inviteCode) && (
+          <div className="field">
+            <label htmlFor="invite" className="label">{t('inviteCode')}</label>
+            <div className="input-box">
+              <input id="invite" dir="ltr" autoCapitalize="characters" autoComplete="off" placeholder="XXXX-XXXX" value={form.inviteCode} onChange={set('inviteCode')} style={{ letterSpacing: 2 }} />
+            </div>
+            <span className="hint">{t('inviteHint')}</span>
+          </div>
+        )}
+
         <div className="field">
           <label htmlFor="username" className="label">{t('username')}</label>
           <div className="input-box">

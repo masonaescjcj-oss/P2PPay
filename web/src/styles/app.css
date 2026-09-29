@@ -525,6 +525,14 @@ textarea::placeholder {
 .note.gold svg {
   color: var(--gold-text);
 }
+.note.blue {
+  background: var(--blue-tint);
+  border: 1px solid var(--line-strong);
+  color: var(--text-2);
+}
+.note.blue svg {
+  color: var(--blue-text);
+}
 
 .avatar {
   width: 42px;
@@ -1193,4 +1201,146 @@ textarea::placeholder {
   direction: ltr;
   unicode-bidi: isolate;
   word-break: break-all;
+}
+
+/* ---------- beta admin: column charts (small multiples, one series each) ---------- */
+.stat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 10px;
+}
+.stat-tile {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 14px;
+}
+.stat-tile .v {
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--text);
+}
+.stat-tile .s {
+  font-size: 12px;
+  color: var(--caption);
+}
+.charts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 12px;
+}
+.colchart {
+  position: relative;
+  padding-top: 18px; /* room for the value label on the tallest column */
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0 8px;
+}
+.colchart .yaxis {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  height: 120px;
+  font-size: 11px;
+  color: var(--caption);
+  text-align: end;
+}
+.colchart .plot {
+  position: relative;
+  height: 120px;
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  border-bottom: 1px solid var(--line-strong);
+  background-image: linear-gradient(var(--line) 1px, transparent 1px);
+  background-size: 100% 60px;
+  background-position: 0 -1px;
+}
+.colchart .slot {
+  position: relative;
+  flex: 1;
+  height: 100%;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  outline: none;
+}
+.colchart .bar {
+  width: 100%;
+  max-width: 24px;
+  min-height: 0;
+  border-radius: 4px 4px 0 0;
+}
+.colchart .slot:hover .bar,
+.colchart .slot:focus-visible .bar {
+  filter: brightness(1.15);
+}
+.colchart .cap {
+  position: absolute;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-2);
+  transform: translateY(-100%);
+  padding-bottom: 2px;
+}
+.colchart .tip {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  white-space: nowrap;
+  background: var(--surface-3);
+  color: var(--text);
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  padding: 4px 8px;
+  font-size: 12px;
+  pointer-events: none;
+  opacity: 0;
+  z-index: 2;
+}
+/* Edge columns: keep the tooltip inside the card */
+.colchart .tip.start {
+  left: 0;
+  transform: none;
+}
+.colchart .tip.end {
+  left: auto;
+  right: 0;
+  transform: none;
+}
+.colchart .slot:hover .tip,
+.colchart .slot:focus-visible .tip {
+  opacity: 1;
+}
+.colchart .xaxis {
+  grid-column: 2;
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  color: var(--caption);
+  padding-top: 4px;
+}
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+.data-table th,
+.data-table td {
+  padding: 4px 6px;
+  border-bottom: 1px solid var(--divider);
+  text-align: start;
+}
+.stack-trace {
+  font-family: ui-monospace, monospace;
+  font-size: 11px;
+  white-space: pre-wrap;
+  word-break: break-all;
+  color: var(--text-2);
+  background: var(--sunken);
+  border-radius: 10px;
+  padding: 10px;
+  max-height: 240px;
+  overflow: auto;
 }

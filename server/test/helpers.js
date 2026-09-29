@@ -101,9 +101,11 @@ async function setup(overrides = {}, deps = {}) {
   // Turns on the authenticator app; returns the base32 secret (codes via totp.totp(secret)).
   async function enableTotp(c, now = Date.now()) {
     const { secret } = (await c.post('/me/totp/setup')).data;
-    const r = await c.post('/me/totp/enable', { code: totp.totp(secret, now) });
+    const code = totp.totp(secret, now);
+    const r = await c.post('/me/totp/enable', { code });
     assert.equal(r.status, 200, JSON.stringify(r.data));
     c.totpSecret = secret;
+    c.enableCode = code;
     c.backupCodes = r.data.backupCodes;
     return secret;
   }

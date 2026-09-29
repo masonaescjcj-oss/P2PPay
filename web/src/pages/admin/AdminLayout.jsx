@@ -51,6 +51,7 @@ export default function AdminLayout() {
             {can('kyc') && <NavLink to="/admin/kyc" aria-current={cur}>{t('kyc')}<Badge n={o?.pendingKyc} /></NavLink>}
             {can('alerts') && <NavLink to="/admin/alerts" aria-current={cur}>{t('alerts')}<Badge n={o?.openAlerts} /></NavLink>}
             {can('users') && <NavLink to="/admin/users" aria-current={cur}>{t('users')}</NavLink>}
+            {can('beta') && <NavLink to="/admin/beta" aria-current={cur}>{t('beta')}<Badge n={(o?.newFeedback || 0) + (o?.openErrors || 0)} /></NavLink>}
             {can('audit') && <NavLink to="/admin/log" aria-current={cur}>{t('auditLog')}</NavLink>}
           </nav>
           <Outlet context={{ overview: ov, perms }} />

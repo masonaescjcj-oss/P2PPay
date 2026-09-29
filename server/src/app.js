@@ -17,6 +17,7 @@ const { createSmsSender } = require('./security/sms');
 const { createSecurity } = require('./security/service');
 const { createKyc } = require('./kyc');
 const { createAlerts } = require('./alerts');
+const { createBeta } = require('./beta');
 const { accountRoutes } = require('./routes/account');
 const { adminRoutes } = require('./routes/admin');
 const m = require('./money');
@@ -55,6 +56,7 @@ async function createApp(config, deps = {}) {
     onWithdrawal: alerts.onWithdrawalRequested,
   });
   const auth = createAuth(db, config);
+  const beta = createBeta(db, config, { box });
   const security = createSecurity(db, config, { box, sms: deps.sms || createSmsSender(config, { log }), alerts, log });
 
   await seedAdmin(db, config);
@@ -118,12 +120,24 @@ async function createApp(config, deps = {}) {
       withdrawFee: m.fmtUsdt(config.withdrawFeeMicro),
       minWithdraw: m.fmtUsdt(config.minWithdrawMicro),
       paymentMethods: config.paymentMethods,
+      beta: beta.publicConfig(),
       kycLimits: Object.fromEntries(Object.entries(config.kycLimits).map(([k, v]) => [k, { trade: m.fmtUsdt(v.trade), withdraw: m.fmtUsdt(v.withdraw) }])),
     });
   });
 
-  const ctx = { db, config, wallet, market, funds, chain, chainOn, auth, security, kyc, alerts, u, id };
+  const ctx = { db, config, wallet, market, funds, chain, chainOn, auth, security, kyc, alerts, beta, u, id };
   accountRoutes(api, ctx);
+
+  // ---------- beta: feedback and error reports ----------
+  api.get('/feedback', u, async (req, res) => res.json(await beta.myFeedback(req.user.id)));
+  api.post('/feedback', u, rateLimit({ windowMs: 60 * 60_000, max: 10 }), async (req, res) =>
+    res.status(201).json(await beta.submitFeedback(req.user.id, req.body, req))
+  );
+  // Browsers report their own crashes (signed in or not); grouped and counted, never shown to users.
+  api.post('/client-errors', rateLimit({ windowMs: 10 * 60_000, max: 30 }), async (req, res) => {
+    await beta.recordError('web', { ...req.body, userAgent: req.headers['user-agent'] }, req.user?.id ?? null);
+    res.status(204).end();
+  });
 
   // ---------- wallet ----------
   api.get('/wallet', u, async (req, res) => {
@@ -223,12 +237,15 @@ async function createApp(config, deps = {}) {
 
   api.use((_req, _res, next) => next(notFound()));
   // eslint-disable-next-line no-unused-vars
-  api.use((err, _req, res, _next) => {
-    if (err instanceof ApiError) return res.status(err.status).json({ error: err.code });
+  api.use((err, req, res, _next) => {
+    if (err instanceof ApiError) return res.status(err.status).json({ ...err.details, error: err.code });
     if (err.type === 'entity.parse.failed') return res.status(400).json({ error: 'invalid_json' });
     if (err.code === '23505') return res.status(409).json({ error: 'conflict' }); // unique violation from a race
     if (err.code === '40P01') return res.status(409).json({ error: 'try_again' }); // deadlock victim
     log.error(err);
+    beta
+      .recordError('server', { message: err.message, stack: err.stack, page: `${req.method} ${req.baseUrl}${req.route?.path ?? req.path}` }, req.user?.id ?? null)
+      .catch(() => {});
     res.status(500).json({ error: 'server_error' });
   });
 

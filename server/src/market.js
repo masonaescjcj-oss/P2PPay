@@ -92,6 +92,8 @@ function createMarket(db, wallet, config, hooks = {}) {
     const maxFiat = m.parseAfn(input.maxFiat);
     if (!price) throw bad('invalid_price');
     if (!total) throw bad('invalid_amount');
+    const cap = config.beta?.maxOfferMicro;
+    if (cap && total > cap) throw bad('beta_offer_limit', null, { max: m.fmtUsdt(cap) });
     if (!minFiat || !maxFiat || minFiat > maxFiat) throw bad('invalid_limits');
     if (minFiat > m.fiatFor(total, price)) throw bad('invalid_limits');
     const methods = Array.isArray(input.paymentMethods) ? [...new Set(input.paymentMethods)] : [];
@@ -180,6 +182,8 @@ function createMarket(db, wallet, config, hooks = {}) {
         amount = m.parseUsdt(input.amount);
       }
       if (!amount) throw bad('invalid_amount');
+      const cap = config.beta?.maxTradeMicro;
+      if (cap && amount > cap) throw bad('beta_trade_limit', null, { max: m.fmtUsdt(cap) });
       const fiat = m.fiatFor(amount, o.price);
       if (amount > o.remaining) throw conflict('exceeds_available');
       if (fiat < o.min_fiat || fiat > o.max_fiat) throw bad('outside_limits');

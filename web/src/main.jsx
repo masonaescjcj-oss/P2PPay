@@ -11,6 +11,9 @@ import './styles/app.css'
 import App from './App.jsx'
 import { AuthProvider } from './lib/auth.jsx'
 import { PrefsProvider } from './lib/prefs.jsx'
+import { installErrorReporter } from './lib/report.js'
+
+installErrorReporter()
 
 createRoot(document.getElementById('root')).render(
   <StrictMode>
