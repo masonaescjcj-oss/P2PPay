@@ -143,11 +143,105 @@ CREATE TABLE IF NOT EXISTS admin_actions (
 CREATE INDEX IF NOT EXISTS admin_actions_time ON admin_actions(id DESC);
 `;
 
+// Ordered schema migrations, tracked with PRAGMA user_version. Never edit a released step; add a new one.
+const MIGRATIONS = [
+  // 1: base schema
+  (db) => db.exec(SCHEMA),
+  // 2: TRON chain mode — per-user deposit addresses, chain deposits, on-chain withdrawal states, sweeps
+  (db) => {
+    db.exec(`
+      CREATE TABLE deposits_new (
+        id INTEGER PRIMARY KEY,
+        user_id INTEGER NOT NULL REFERENCES users(id),
+        amount INTEGER NOT NULL CHECK (amount > 0),
+        network TEXT NOT NULL,
+        txid TEXT NOT NULL,
+        address TEXT,
+        source TEXT NOT NULL DEFAULT 'manual' CHECK (source IN ('manual','chain')),
+        status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','approved','rejected')),
+        note TEXT,
+        created_at INTEGER NOT NULL,
+        reviewed_at INTEGER
+      );
+      INSERT INTO deposits_new (id, user_id, amount, network, txid, status, note, created_at, reviewed_at)
+        SELECT id, user_id, amount, network, txid, status, note, created_at, reviewed_at FROM deposits;
+      DROP TABLE deposits;
+      ALTER TABLE deposits_new RENAME TO deposits;
+      CREATE UNIQUE INDEX deposits_txid_address ON deposits(txid, COALESCE(address, ''));
+
+      CREATE TABLE withdrawals_new (
+        id INTEGER PRIMARY KEY,
+        user_id INTEGER NOT NULL REFERENCES users(id),
+        amount INTEGER NOT NULL CHECK (amount > 0),
+        fee INTEGER NOT NULL,
+        network TEXT NOT NULL,
+        address TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','sending','sent','failed','rejected')),
+        txid TEXT,
+        tx_expires_at INTEGER,
+        auto INTEGER NOT NULL DEFAULT 0,
+        attempts INTEGER NOT NULL DEFAULT 0,
+        note TEXT,
+        created_at INTEGER NOT NULL,
+        reviewed_at INTEGER
+      );
+      INSERT INTO withdrawals_new (id, user_id, amount, fee, network, address, status, txid, note, created_at, reviewed_at)
+        SELECT id, user_id, amount, fee, network, address, status, txid, note, created_at, reviewed_at FROM withdrawals;
+      DROP TABLE withdrawals;
+      ALTER TABLE withdrawals_new RENAME TO withdrawals;
+      CREATE INDEX withdrawals_status ON withdrawals(status);
+
+      CREATE TABLE deposit_addresses (
+        user_id INTEGER PRIMARY KEY REFERENCES users(id),
+        address TEXT NOT NULL UNIQUE,
+        derivation_index INTEGER NOT NULL UNIQUE,
+        watch_until INTEGER NOT NULL DEFAULT 0,
+        scanned_until INTEGER NOT NULL DEFAULT 0,
+        last_scan_at INTEGER NOT NULL DEFAULT 0,
+        needs_sweep INTEGER NOT NULL DEFAULT 0,
+        created_at INTEGER NOT NULL
+      );
+
+      -- Internal chain movements: TRX top-ups to deposit addresses and USDT sweeps out of them.
+      CREATE TABLE sweeps (
+        id INTEGER PRIMARY KEY,
+        user_id INTEGER NOT NULL REFERENCES users(id),
+        kind TEXT NOT NULL CHECK (kind IN ('topup','sweep')),
+        from_address TEXT NOT NULL,
+        to_address TEXT NOT NULL,
+        amount TEXT NOT NULL,
+        txid TEXT NOT NULL,
+        tx_expires_at INTEGER NOT NULL,
+        status TEXT NOT NULL CHECK (status IN ('sending','confirmed','failed')),
+        note TEXT,
+        created_at INTEGER NOT NULL
+      );
+      CREATE INDEX sweeps_status ON sweeps(status);
+    `);
+  },
+];
+
+function migrate(db) {
+  const current = db.prepare('PRAGMA user_version').get().user_version;
+  for (let v = current; v < MIGRATIONS.length; v++) {
+    db.exec('PRAGMA foreign_keys = OFF; BEGIN IMMEDIATE');
+    try {
+      MIGRATIONS[v](db);
+      db.exec(`PRAGMA user_version = ${v + 1}; COMMIT`);
+    } catch (err) {
+      db.exec('ROLLBACK');
+      throw err;
+    } finally {
+      db.exec('PRAGMA foreign_keys = ON');
+    }
+  }
+}
+
 function open(dbPath) {
   if (dbPath !== ':memory:') fs.mkdirSync(path.dirname(dbPath), { recursive: true });
   const db = new DatabaseSync(dbPath);
   db.exec('PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000;');
-  db.exec(SCHEMA);
+  migrate(db);
 
   let depth = 0;
   // Run fn inside a transaction; nested calls join the outer one.

@@ -3,21 +3,23 @@
 const { bad, forbidden, notFound, conflict } = require('./errors');
 const m = require('./money');
 
-const TRON_ADDRESS = /^T[1-9A-HJ-NP-Za-km-z]{33}$/;
+const { isAddress } = require('./tron/keys');
 const TXID = /^(0x)?[0-9a-fA-F]{64}$/;
 
 // Deposits and withdrawals are reviewed by an admin, who checks the Tron chain
 // (e.g. on tronscan.org) before approving. Hook an on-chain watcher in here later.
-function createFunds(db, wallet, config) {
+// isBlockedAddress: optional predicate for addresses users may not withdraw to (the platform's own wallets).
+function createFunds(db, wallet, config, { isBlockedAddress } = {}) {
   const now = () => Date.now();
 
   const depView = (d) => ({
     id: d.id, userId: d.user_id, username: d.username, amount: m.fmtUsdt(d.amount), network: d.network,
-    txid: d.txid, status: d.status, note: d.note, createdAt: d.created_at, reviewedAt: d.reviewed_at,
+    txid: d.txid, address: d.address ?? null, source: d.source ?? 'manual', status: d.status, note: d.note, createdAt: d.created_at, reviewedAt: d.reviewed_at,
   });
   const wdView = (w) => ({
     id: w.id, userId: w.user_id, username: w.username, amount: m.fmtUsdt(w.amount), fee: m.fmtUsdt(w.fee),
     network: w.network, address: w.address, status: w.status, txid: w.txid, note: w.note,
+    auto: !!w.auto, attempts: w.attempts ?? 0,
     createdAt: w.created_at, reviewedAt: w.reviewed_at,
   });
 
@@ -56,7 +58,7 @@ function createFunds(db, wallet, config) {
     if (!amount) throw bad('invalid_amount');
     if (amount < config.minWithdrawMicro) throw bad('below_minimum');
     const address = String(input.address ?? '').trim();
-    if (!TRON_ADDRESS.test(address)) throw bad('invalid_address');
+    if (!isAddress(address) || (isBlockedAddress && isBlockedAddress(address))) throw bad('invalid_address');
     const fee = config.withdrawFeeMicro;
     return db.tx(() => {
       const { lastInsertRowid } = db
@@ -73,7 +75,7 @@ function createFunds(db, wallet, config) {
       const w = db.prepare('SELECT * FROM withdrawals WHERE id = ?').get(id);
       if (!w) throw notFound();
       if (w.user_id === actorId) throw forbidden('own_request');
-      if (w.status !== 'pending') throw conflict('already_reviewed');
+      if (w.status !== 'pending' && w.status !== 'failed') throw conflict('already_reviewed');
       const ref = { type: 'withdrawal', id: w.id };
       let txid = null;
       if (approve) {
@@ -110,4 +112,4 @@ function createFunds(db, wallet, config) {
   };
 }
 
-module.exports = { createFunds, TRON_ADDRESS };
+module.exports = { createFunds };

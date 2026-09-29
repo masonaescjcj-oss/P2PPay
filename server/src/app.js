@@ -7,15 +7,25 @@ const { open } = require('./db');
 const { createWallet } = require('./wallet');
 const { createMarket } = require('./market');
 const { createFunds } = require('./funds');
+const { createChain } = require('./chain');
+const { createTronClient } = require('./tron/client');
 const { hashPassword, verifyPassword, createAuth, rateLimit } = require('./auth');
 const { ApiError, bad, conflict, forbidden, notFound } = require('./errors');
 const m = require('./money');
 
-function createApp(config) {
+// deps.tronClient lets tests replace TronGrid with a fake chain.
+function createApp(config, deps = {}) {
   const db = open(config.dbPath);
   const wallet = createWallet(db);
   const market = createMarket(db, wallet, config);
-  const funds = createFunds(db, wallet, config);
+  const chainOn = config.tron && config.tron.network !== 'off';
+  const chain = chainOn
+    ? createChain(db, wallet, config, {
+      client: deps.tronClient || createTronClient({ apiUrl: config.tron.apiUrl, apiKey: config.tron.apiKey }),
+      log: deps.log || console,
+    })
+    : null;
+  const funds = createFunds(db, wallet, config, { isBlockedAddress: chain ? chain.isPlatformAddress : null });
   const auth = createAuth(db, config);
 
   seedAdmin(db, config);
@@ -62,7 +72,10 @@ function createApp(config) {
     res.json({
       fiat: config.fiat,
       network: config.network,
-      depositAddress: config.depositAddress,
+      chain: chainOn
+        ? { network: config.tron.network, explorer: config.tron.explorer, minDeposit: m.fmtUsdt(config.tron.minDepositMicro) }
+        : null,
+      depositAddress: chainOn ? null : config.depositAddress,
       tradeFeeBps: config.tradeFeeBps,
       withdrawFee: m.fmtUsdt(config.withdrawFeeMicro),
       minWithdraw: m.fmtUsdt(config.minWithdrawMicro),
@@ -125,7 +138,20 @@ function createApp(config) {
       withdrawals: funds.myWithdrawals(req.user.id),
     });
   });
-  api.post('/deposits', u, (req, res) => res.status(201).json(funds.requestDeposit(req.user.id, req.body)));
+  api.post('/deposits', u, (req, res) => {
+    // With per-user addresses, deposits are detected on chain; manual TxID claims are not needed.
+    if (chainOn) throw bad('chain_deposits_only');
+    res.status(201).json(funds.requestDeposit(req.user.id, req.body));
+  });
+  api.get('/deposit-address', u, (req, res) => {
+    if (!chainOn) throw notFound();
+    res.json({ address: chain.depositAddress(req.user.id), network: 'TRC20', minDeposit: m.fmtUsdt(config.tron.minDepositMicro) });
+  });
+  api.post('/deposit-address/check', u, rateLimit({ windowMs: 60_000, max: 6 }), async (req, res) => {
+    if (!chainOn) throw notFound();
+    chain.depositAddress(req.user.id);
+    res.json({ credited: await chain.scanUser(req.user.id) });
+  });
   api.post('/withdrawals', u, (req, res) => res.status(201).json(funds.requestWithdrawal(req.user.id, req.body)));
 
   // ---------- payment accounts ----------
@@ -214,12 +240,29 @@ function createApp(config) {
       res.json(audited(req, `deposit_${decision}`, 'deposit', did, () =>
         funds.reviewDeposit(did, decision === 'approve', req.body, req.user.id)));
     });
-    api.post(`/admin/withdrawals/:id/${decision}`, admin, (req, res) => {
+    api.post(`/admin/withdrawals/:id/${decision}`, admin, async (req, res) => {
       const wid = id(req);
+      // A failed on-chain attempt must be provably dead before it is refunded or settled by hand.
+      if (chain) await chain.assertSettledFailure(wid);
       res.json(audited(req, `withdrawal_${decision}`, 'withdrawal', wid, () =>
         funds.reviewWithdrawal(wid, decision === 'approve', req.body, req.user.id)));
     });
   }
+  // Chain mode: hot wallet status, and sending a withdrawal (or retrying a failed one) from the hot wallet.
+  api.get('/admin/chain', admin, async (_req, res) => {
+    if (!chainOn) return res.json({ network: 'off' });
+    res.json(await chain.status());
+  });
+  api.post('/admin/withdrawals/:id/send', admin, async (req, res) => {
+    if (!chainOn) throw bad('chain_off');
+    const wid = id(req);
+    const w = db.prepare('SELECT user_id FROM withdrawals WHERE id = ?').get(wid);
+    if (!w) throw notFound();
+    if (w.user_id === req.user.id) throw forbidden('own_request');
+    const out = await chain.sendWithdrawal(wid);
+    insertAction.run(req.user.id, 'withdrawal_send', 'withdrawal', wid, req.body?.note ? String(req.body.note).slice(0, 500) : null, Date.now());
+    res.json(out);
+  });
   api.get('/admin/trades', admin, (req, res) => res.json(market.listTrades(req.query.status || null)));
   api.post('/admin/trades/:id/resolve', admin, (req, res) => {
     const tid = id(req);
@@ -285,11 +328,14 @@ function createApp(config) {
 
   const sweeper = setInterval(() => market.expireTrades(), 30_000);
   sweeper.unref();
+  if (chain && deps.autoStartChain !== false) chain.start();
   app.locals.close = () => {
     clearInterval(sweeper);
+    chain?.stop();
     db.close();
   };
   app.locals.db = db;
+  app.locals.chain = chain;
   return app;
 }
 

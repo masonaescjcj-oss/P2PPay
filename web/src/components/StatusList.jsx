@@ -1,7 +1,7 @@
 import { dayKey, usdt } from '../lib/format.js'
 import { usePrefs } from '../lib/prefs.jsx'
 
-const TONE = { pending: 'gold', approved: 'green', sent: 'green', rejected: 'coral' }
+const TONE = { pending: 'gold', sending: 'blue', approved: 'green', sent: 'green', failed: 'coral', rejected: 'coral' }
 
 export default function StatusList({ title, items, showAddress }) {
   const { t } = usePrefs()

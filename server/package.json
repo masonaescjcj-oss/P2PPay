@@ -10,10 +10,19 @@
   "scripts": {
     "start": "node --env-file-if-exists=.env --disable-warning=ExperimentalWarning src/index.js",
     "dev": "node --env-file-if-exists=.env --disable-warning=ExperimentalWarning --watch src/index.js",
-    "test": "node --disable-warning=ExperimentalWarning --test \"test/**/*.test.js\""
+    "test": "node --disable-warning=ExperimentalWarning --test \"test/**/*.test.js\"",
+    "wallet:new": "node --disable-warning=ExperimentalWarning src/tools/new-wallet.js"
   },
   "license": "MIT",
   "dependencies": {
+    "@noble/curves": "^2.4.0",
+    "@noble/hashes": "^2.4.0",
+    "@scure/base": "^2.4.0",
+    "@scure/bip32": "^2.4.0",
+    "@scure/bip39": "^2.4.0",
     "express": "^5.2.1"
+  },
+  "devDependencies": {
+    "tronweb": "^6.5.1"
   }
 }
