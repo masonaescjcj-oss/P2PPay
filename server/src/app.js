@@ -1,5 +1,6 @@
 'use strict';
 
+const fs = require('node:fs');
 const path = require('node:path');
 const express = require('express');
 const { open } = require('./db');
@@ -28,11 +29,14 @@ function createApp(config) {
     res.setHeader('Referrer-Policy', 'same-origin');
     res.setHeader(
       'Content-Security-Policy',
-      "default-src 'self'; style-src 'self' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:"
+      "default-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data: blob:"
     );
     next();
   });
-  app.use(express.static(path.join(__dirname, '..', 'public')));
+  // The built React app (web/dist) is served from the same origin as the API.
+  const webDist = config.webDist || path.join(__dirname, '..', '..', 'web', 'dist');
+  const hasWeb = fs.existsSync(path.join(webDist, 'index.html'));
+  if (hasWeb) app.use(express.static(webDist));
 
   const api = express.Router();
   api.use(express.json({ limit: '32kb' }));
@@ -211,7 +215,7 @@ function createApp(config) {
   });
 
   app.use('/api', api);
-  app.get(/^\/(?!api\/).*/, (_req, res) => res.sendFile(path.join(__dirname, '..', 'public', 'index.html')));
+  if (hasWeb) app.get(/^\/(?!api\/).*/, (_req, res) => res.sendFile(path.join(webDist, 'index.html')));
 
   const sweeper = setInterval(() => market.expireTrades(), 30_000);
   sweeper.unref();
