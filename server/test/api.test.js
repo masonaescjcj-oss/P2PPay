@@ -48,9 +48,14 @@ async function setup() {
     assert.equal(a.status, 200, JSON.stringify(a.data));
   }
 
+  async function account(c, method) {
+    const r = await c.post('/payment-accounts', { method, holderName: 'Test Holder', account: `0700-${method}` });
+    assert.equal(r.status, 201, JSON.stringify(r.data));
+  }
+
   const balance = async (c) => (await c.get('/wallet')).data;
   const close = () => { server.close(); app.locals.close(); };
-  return { app, base, admin, user, client, fund, balance, close };
+  return { app, base, admin, user, client, fund, account, balance, close };
 }
 
 test('sell offer: buyer pays, seller releases, fee and escrow are correct', async (t) => {
@@ -59,6 +64,12 @@ test('sell offer: buyer pays, seller releases, fee and escrow are correct', asyn
   const seller = await s.user('seller1');
   const buyer = await s.user('buyer1');
   await s.fund(seller, '100', 1);
+  const noAcct = await seller.post('/offers', {
+    side: 'sell', price: '71.5', total: '50', minFiat: '500', maxFiat: '10000', paymentMethods: ['hesabpay', 'hawala'],
+  });
+  assert.equal(noAcct.data.error, 'missing_payment_account');
+  await s.account(seller, 'hesabpay');
+  await s.account(seller, 'hawala');
 
   const offer = await seller.post('/offers', {
     side: 'sell', price: '71.5', total: '50', minFiat: '500', maxFiat: '10000', paymentMethods: ['hesabpay', 'hawala'],
@@ -83,6 +94,7 @@ test('sell offer: buyer pays, seller releases, fee and escrow are correct', asyn
   assert.equal(trade.data.amount, '20');
   assert.equal(trade.data.fiat, '1430');
   assert.equal(trade.data.role, 'buyer');
+  assert.deepEqual(trade.data.paymentAccount, { holderName: 'Test Holder', account: '0700-hawala' });
   assert.equal((await seller.get(`/offers/${offer.data.id}`)).data.remaining, '30');
 
   assert.equal((await seller.post(`/trades/${trade.data.id}/pay`)).status, 403);
@@ -129,6 +141,8 @@ test('buy offer: taker sells, buyer cancels, funds are refunded', async (t) => {
   assert.equal(offer.status, 201);
   assert.equal((await s.balance(maker)).locked, '0');
 
+  assert.equal((await taker.post(`/offers/${offer.data.id}/trades`, { amount: '30' })).data.error, 'missing_payment_account');
+  await s.account(taker, 'mpaisa');
   assert.equal((await taker.post(`/offers/${offer.data.id}/trades`, { amount: '50' })).data.error, 'insufficient_balance');
   const trade = await taker.post(`/offers/${offer.data.id}/trades`, { amount: '30' });
   assert.equal(trade.status, 201, JSON.stringify(trade.data));
@@ -151,6 +165,7 @@ test('cancel after the sell offer was closed returns funds to the seller balance
   const seller = await s.user('seller7');
   const buyer = await s.user('buyer7');
   await s.fund(seller, '10', 7);
+  await s.account(seller, 'bank');
   const offer = await seller.post('/offers', {
     side: 'sell', price: '70', total: '10', minFiat: '70', maxFiat: '700', paymentMethods: ['bank'],
   });
@@ -171,6 +186,7 @@ test('dispute resolved by admin for buyer and for seller', async (t) => {
   const seller = await s.user('seller3');
   const buyer = await s.user('buyer3');
   await s.fund(seller, '20', 3);
+  await s.account(seller, 'bank');
   const offer = await seller.post('/offers', {
     side: 'sell', price: '70', total: '20', minFiat: '70', maxFiat: '700', paymentMethods: ['bank'],
   });
@@ -201,6 +217,7 @@ test('expired trade is cancelled and funds return to the offer', async (t) => {
   const seller = await s.user('seller4');
   const buyer = await s.user('buyer4');
   await s.fund(seller, '10', 4);
+  await s.account(seller, 'cash');
   const offer = await seller.post('/offers', {
     side: 'sell', price: '70', total: '10', minFiat: '70', maxFiat: '700', paymentMethods: ['cash'],
   });
@@ -219,6 +236,7 @@ test('open trade limit per taker', async (t) => {
   const seller = await s.user('seller8');
   const buyer = await s.user('buyer8');
   await s.fund(seller, '100', 8);
+  await s.account(seller, 'cash');
   const offer = await seller.post('/offers', {
     side: 'sell', price: '70', total: '100', minFiat: '70', maxFiat: '7000', paymentMethods: ['cash'],
   });
@@ -277,9 +295,18 @@ test('auth, admin guard and input validation', async (t) => {
   assert.equal(d.data.amount, '12.5');
   assert.equal((await u.post('/deposits', { amount: '1', txid: TXID(6) })).data.error, 'duplicate_txid');
   assert.equal((await u.post('/deposits', { amount: '1', txid: 'nope' })).data.error, 'invalid_txid');
+  assert.equal((await u.post('/payment-accounts', { method: 'paypal', holderName: 'x', account: '1' })).data.error, 'invalid_payment_method');
+  assert.equal((await u.post('/payment-accounts', { method: 'hesabpay', holderName: '', account: '1' })).data.error, 'invalid_payment_account');
+  await s.account(u, 'hesabpay');
+  await u.post('/payment-accounts', { method: 'hesabpay', holderName: 'New Name', account: '0799' });
+  const accts = (await u.get('/payment-accounts')).data;
+  assert.equal(accts.length, 1);
+  assert.equal(accts[0].holderName, 'New Name');
   assert.equal((await u.post('/offers', {
     side: 'sell', price: '70', total: '5', minFiat: '70', maxFiat: '350', paymentMethods: ['hesabpay'],
   })).data.error, 'insufficient_balance');
+  assert.equal((await u.post(`/payment-accounts/${accts[0].id}/delete`)).data.ok, true);
+  assert.equal((await u.get('/payment-accounts')).data.length, 0);
   assert.equal((await u.post('/offers', {
     side: 'sell', price: '70', total: '5', minFiat: '70', maxFiat: '350', paymentMethods: ['paypal'],
   })).data.error, 'invalid_payment_methods');

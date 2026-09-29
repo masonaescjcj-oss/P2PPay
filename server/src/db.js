@@ -118,6 +118,17 @@ CREATE TABLE IF NOT EXISTS trade_messages (
   created_at INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS messages_trade ON trade_messages(trade_id, id);
+
+-- Where a user receives AFN for a given payment method (shown to the buyer of a trade).
+CREATE TABLE IF NOT EXISTS payment_accounts (
+  id INTEGER PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id),
+  method TEXT NOT NULL,
+  holder_name TEXT NOT NULL,
+  account TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  UNIQUE (user_id, method)
+);
 `;
 
 function open(dbPath) {

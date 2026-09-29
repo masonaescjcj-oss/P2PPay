@@ -1,0 +1,104 @@
+/* Design tokens — "Lapis & Saffron" (dark) and "Ivory & Lapis" (light). */
+:root,
+[data-theme='dark'] {
+  color-scheme: dark;
+  --bg: #080c1c;
+  --bar: #0c1226;
+  --surface: #10172e;
+  --surface-2: #172040;
+  --surface-3: #1e2a52;
+  --sunken: #0b1226;
+  --line: #1c2548;
+  --line-strong: #25305a;
+  --divider: #141c38;
+  --ring: #3a4474;
+
+  --text: #f5efe2;
+  --text-2: #c9cfe3;
+  --muted: #9aa3c2;
+  --caption: #8791b3;
+  --placeholder: #6f7899;
+
+  --gold: #e9b44c;
+  --gold-text: #e9b44c;
+  --gold-line: #e9b44c;
+  --on-gold: #1b1405;
+  --gold-tint: #2a2410;
+  --gold-tint-2: #16140c;
+  --gold-tint-line: #5a4520;
+  --gold-tint-text: #e7d8b0;
+
+  --green: #34c495;
+  --green-text: #34c495;
+  --on-green: #06140f;
+  --green-tint: #0f2e2a;
+  --green-tint-2: #0e1a24;
+  --green-tint-line: #173a36;
+  --green-tint-text: #bfe9da;
+
+  --coral: #f2907c;
+  --coral-text: #f2907c;
+  --on-coral: #1f0b06;
+  --coral-tint: #34201f;
+  --coral-tint-2: #1f1212;
+  --coral-tint-line: #4a2620;
+  --coral-tint-text: #f3c9bf;
+
+  --blue-text: #7d9bff;
+  --blue-tint: #13294a;
+  --blue-tint-text: #9db3ff;
+
+  /* The balance card stays lapis in both themes. */
+  --lapis: #13204a;
+  --lapis-line: #3a4474;
+  --lapis-sunken: #0b1433;
+  --lapis-text: #f5efe2;
+  --lapis-text-2: #c9cfe3;
+  --lapis-muted: #9aa3c2;
+
+  --tether: #26a17b;
+  --danger-dot: #e8705a;
+}
+
+[data-theme='light'] {
+  color-scheme: light;
+  --bg: #f6f2e9;
+  --bar: #ffffff;
+  --surface: #ffffff;
+  --surface-2: #eef0f7;
+  --surface-3: #e3e8f6;
+  --sunken: #f4f1ea;
+  --line: #e4e1d8;
+  --line-strong: #d9d5ca;
+  --divider: #ece8de;
+  --ring: #c9cddc;
+
+  --text: #111936;
+  --text-2: #3b4468;
+  --muted: #5b6486;
+  --caption: #646d8f;
+  --placeholder: #8a92ae;
+
+  --gold-text: #9a6a0e;
+  --gold-line: #d29a2a;
+  --gold-tint: #fbf0d6;
+  --gold-tint-2: #fbf3e0;
+  --gold-tint-line: #ebd3a0;
+  --gold-tint-text: #6b4e12;
+
+  --green-text: #13875f;
+  --green-tint: #e1f5ec;
+  --green-tint-2: #eaf7f1;
+  --green-tint-line: #bfe6d5;
+  --green-tint-text: #0e6b4b;
+
+  --coral-text: #c2493a;
+  --coral-tint: #fce7e2;
+  --coral-tint-2: #fdf0ec;
+  --coral-tint-line: #f1c6bb;
+  --coral-tint-text: #9a3324;
+
+  --blue-text: #3552c9;
+  --blue-tint: #e4eafc;
+  --blue-tint-text: #2f47b0;
+}

@@ -1,122 +1,44 @@
-import { useState } from 'react'
-import heroImg from './assets/hero.png'
-import reactLogo from './assets/react.svg'
-import viteLogo from './assets/vite.svg'
-import './App.css'
+import { Navigate, Route, Routes } from 'react-router-dom'
+import { RequireAuth, useAuth } from './lib/auth.jsx'
+import Auth from './pages/Auth.jsx'
+import Chat from './pages/Chat.jsx'
+import CreateOffer from './pages/CreateOffer.jsx'
+import Deposit from './pages/Deposit.jsx'
+import Home from './pages/Home.jsx'
+import Market from './pages/Market.jsx'
+import Offer from './pages/Offer.jsx'
+import Orders from './pages/Orders.jsx'
+import PaymentAccounts from './pages/PaymentAccounts.jsx'
+import Profile from './pages/Profile.jsx'
+import Trade from './pages/Trade.jsx'
+import Wallet from './pages/Wallet.jsx'
+import Welcome from './pages/Welcome.jsx'
+import Withdraw from './pages/Withdraw.jsx'
 
-function App() {
-  const [count, setCount] = useState(0)
+const priv = (el) => <RequireAuth>{el}</RequireAuth>
 
+export default function App() {
+  const { user } = useAuth()
   return (
-    <>
-      <section id="center">
-        <div className="hero">
-          <img src={heroImg} className="base" width="170" height="179" alt="" />
-          <img src={reactLogo} className="framework" alt="React logo" />
-          <img src={viteLogo} className="vite" alt="Vite logo" />
-        </div>
-        <div>
-          <h1>Get started</h1>
-          <p>
-            Edit <code>src/App.jsx</code> and save to test <code>HMR</code>
-          </p>
-        </div>
-        <button
-          type="button"
-          className="counter"
-          onClick={() => setCount((count) => count + 1)}
-        >
-          Count is {count}
-        </button>
-      </section>
-
-      <div className="ticks"></div>
-
-      <section id="next-steps">
-        <div id="docs">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#documentation-icon"></use>
-          </svg>
-          <h2>Documentation</h2>
-          <p>Your questions, answered</p>
-          <ul>
-            <li>
-              <a href="https://vite.dev/" target="_blank">
-                <img className="logo" src={viteLogo} alt="" />
-                Explore Vite
-              </a>
-            </li>
-            <li>
-              <a href="https://react.dev/" target="_blank">
-                <img className="button-icon" src={reactLogo} alt="" />
-                Learn more
-              </a>
-            </li>
-          </ul>
-        </div>
-        <div id="social">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#social-icon"></use>
-          </svg>
-          <h2>Connect with us</h2>
-          <p>Join the Vite community</p>
-          <ul>
-            <li>
-              <a href="https://github.com/vitejs/vite" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#github-icon"></use>
-                </svg>
-                GitHub
-              </a>
-            </li>
-            <li>
-              <a href="https://chat.vite.dev/" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#discord-icon"></use>
-                </svg>
-                Discord
-              </a>
-            </li>
-            <li>
-              <a href="https://x.com/vite_js" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#x-icon"></use>
-                </svg>
-                X.com
-              </a>
-            </li>
-            <li>
-              <a href="https://bsky.app/profile/vite.dev" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#bluesky-icon"></use>
-                </svg>
-                Bluesky
-              </a>
-            </li>
-          </ul>
-        </div>
-      </section>
-
-      <div className="ticks"></div>
-      <section id="spacer"></section>
-    </>
+    <div className="shell">
+      <Routes>
+        <Route path="/" element={user === null ? <Navigate to="/welcome" replace /> : priv(<Home />)} />
+        <Route path="/welcome" element={<Welcome />} />
+        <Route path="/login" element={<Auth mode="login" />} />
+        <Route path="/register" element={<Auth mode="register" />} />
+        <Route path="/market" element={<Market />} />
+        <Route path="/offers/new" element={priv(<CreateOffer />)} />
+        <Route path="/offers/:id" element={<Offer />} />
+        <Route path="/trades/:id" element={priv(<Trade />)} />
+        <Route path="/trades/:id/chat" element={priv(<Chat />)} />
+        <Route path="/orders" element={priv(<Orders />)} />
+        <Route path="/wallet" element={priv(<Wallet />)} />
+        <Route path="/deposit" element={priv(<Deposit />)} />
+        <Route path="/withdraw" element={priv(<Withdraw />)} />
+        <Route path="/profile" element={priv(<Profile />)} />
+        <Route path="/profile/accounts" element={priv(<PaymentAccounts />)} />
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
+    </div>
   )
 }
-
-export default App

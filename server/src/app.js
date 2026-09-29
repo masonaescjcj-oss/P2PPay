@@ -128,6 +128,30 @@ function createApp(config) {
   api.post('/deposits', u, (req, res) => res.status(201).json(funds.requestDeposit(req.user.id, req.body)));
   api.post('/withdrawals', u, (req, res) => res.status(201).json(funds.requestWithdrawal(req.user.id, req.body)));
 
+  // ---------- payment accounts ----------
+  const accountView = (a) => ({ id: a.id, method: a.method, holderName: a.holder_name, account: a.account });
+  api.get('/payment-accounts', u, (req, res) => {
+    res.json(db.prepare('SELECT * FROM payment_accounts WHERE user_id = ? ORDER BY id').all(req.user.id).map(accountView));
+  });
+  api.post('/payment-accounts', u, (req, res) => {
+    const method = String(req.body.method ?? '');
+    const holderName = String(req.body.holderName ?? '').trim().slice(0, 80);
+    const account = String(req.body.account ?? '').trim().slice(0, 80);
+    if (!config.paymentMethods.includes(method)) throw bad('invalid_payment_method');
+    if (!holderName || !account) throw bad('invalid_payment_account');
+    db.prepare(
+      `INSERT INTO payment_accounts (user_id, method, holder_name, account, created_at) VALUES (?, ?, ?, ?, ?)
+       ON CONFLICT (user_id, method) DO UPDATE SET holder_name = excluded.holder_name, account = excluded.account`
+    ).run(req.user.id, method, holderName, account, Date.now());
+    const row = db.prepare('SELECT * FROM payment_accounts WHERE user_id = ? AND method = ?').get(req.user.id, method);
+    res.status(201).json(accountView(row));
+  });
+  api.post('/payment-accounts/:id/delete', u, (req, res) => {
+    const r = db.prepare('DELETE FROM payment_accounts WHERE id = ? AND user_id = ?').run(id(req), req.user.id);
+    if (!r.changes) throw notFound();
+    res.json({ ok: true });
+  });
+
   // ---------- offers ----------
   api.get('/offers', (req, res) => {
     res.json(market.listMarket({ side: req.query.side, paymentMethod: req.query.paymentMethod, fiat: req.query.fiat }));

@@ -13,6 +13,8 @@ function createMarket(db, wallet, config) {
   const setRemaining = db.prepare('UPDATE offers SET remaining = ? WHERE id = ?');
   const addMsg = db.prepare('INSERT INTO trade_messages (trade_id, user_id, body, created_at) VALUES (?, ?, ?, ?)');
   const sys = (tradeId, body) => addMsg.run(tradeId, null, body, now());
+  const getAccount = db.prepare('SELECT holder_name, account FROM payment_accounts WHERE user_id = ? AND method = ?');
+  const hasAccount = (userId, method) => !!getAccount.get(userId, method);
 
   const userStats = db.prepare(
     `SELECT
@@ -67,6 +69,11 @@ function createMarket(db, wallet, config) {
       fiat: m.fmtAfn(t.fiat),
       paymentMethod: t.payment_method,
       terms: offer.terms,
+      // The seller's receiving account for the chosen method; only trade parties and admins see trades.
+      paymentAccount: (() => {
+        const a = getAccount.get(t.seller_id, t.payment_method);
+        return a ? { holderName: a.holder_name, account: a.account } : null;
+      })(),
       status: t.status,
       disputeReason: t.dispute_reason,
       resolution: t.resolution,
@@ -95,6 +102,8 @@ function createMarket(db, wallet, config) {
     const terms = String(input.terms ?? '').trim().slice(0, 1000);
     const window = Number.parseInt(input.paymentWindow ?? config.defaultPaymentWindowMin, 10);
     if (!(window >= 10 && window <= 180)) throw bad('invalid_payment_window');
+    // A seller must be able to tell buyers where to send AFN.
+    if (side === 'sell' && methods.some((pm) => !hasAccount(userId, pm))) throw bad('missing_payment_account');
 
     return db.tx(() => {
       const { lastInsertRowid } = db
@@ -186,6 +195,8 @@ function createMarket(db, wallet, config) {
       const methods = JSON.parse(o.payment_methods);
       const pm = input.paymentMethod || methods[0];
       if (!methods.includes(pm)) throw bad('invalid_payment_method');
+      if (o.side === 'buy' && !hasAccount(takerId, pm)) throw bad('missing_payment_account');
+      if (o.side === 'sell' && !hasAccount(o.user_id, pm)) throw conflict('offer_unavailable');
 
       const open = db
         .prepare(

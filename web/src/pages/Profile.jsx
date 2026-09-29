@@ -1,0 +1,99 @@
+import { Link, useNavigate } from 'react-router-dom'
+import Icon from '../components/Icon.jsx'
+import { TabBar } from '../components/Layout.jsx'
+import { useAuth } from '../lib/auth.jsx'
+import { initial } from '../lib/format.js'
+import { useApi } from '../lib/hooks.js'
+import { usePrefs } from '../lib/prefs.jsx'
+
+function Row({ icon, tone = 'neutral', label, value, to, onClick, children }) {
+  const inner = (
+    <>
+      <span className={`icon-tile ${tone}`} style={{ width: 36, height: 36, borderRadius: 11 }}><Icon name={icon} size={18} /></span>
+      <span className="grow">{label}</span>
+      {value && <span className="caption">{value}</span>}
+      {children}
+      {(to || onClick) && !children && <Icon name="forward" size={16} stroke={2} style={{ color: 'var(--placeholder)' }} />}
+    </>
+  )
+  if (to) return <Link to={to} className="menu-row">{inner}</Link>
+  if (onClick) return <button type="button" className="menu-row" onClick={onClick}>{inner}</button>
+  return <div className="menu-row" style={{ cursor: 'default' }}>{inner}</div>
+}
+
+export default function Profile() {
+  const { t, pm, lang, setLang, theme, setTheme } = usePrefs()
+  const { user, logout, refresh } = useAuth()
+  const navigate = useNavigate()
+  const accounts = useApi('/payment-accounts')
+  const me = useApi('/me')
+  const stats = me.data || user
+
+  return (
+    <>
+      <main className="page with-tabs">
+        <div className="row" style={{ gap: 14 }}>
+          <div style={{ position: 'relative', width: 72, height: 72, flexShrink: 0 }}>
+            <svg width="72" height="72" viewBox="0 0 72 72" aria-hidden="true" style={{ position: 'absolute', inset: 0 }}>
+              <g fill="none" stroke="var(--gold-text)" strokeWidth="1.4">
+                <rect x="12" y="12" width="48" height="48" />
+                <rect x="12" y="12" width="48" height="48" transform="rotate(45 36 36)" />
+              </g>
+            </svg>
+            <div className="avatar" style={{ position: 'absolute', top: 14, insetInlineStart: 14, width: 44, height: 44, color: 'var(--gold-text)', fontSize: 19 }}>{initial(user.displayName)}</div>
+          </div>
+          <div className="grow stack" style={{ gap: 4 }}>
+            <strong style={{ fontSize: 18 }}>{user.displayName}</strong>
+            <span dir="ltr" className="caption" style={{ textAlign: 'start' }}>@{user.username}</span>
+            {stats.completed >= 10 && (
+              <span className="pill green" style={{ alignSelf: 'flex-start', height: 24 }}><Icon name="check" size={12} stroke={2.4} />{t('verified')}</span>
+            )}
+          </div>
+        </div>
+
+        <div className="grid-3" style={{ gap: 8 }}>
+          <div className="stat card" style={{ padding: 12 }}><span>{t('memberTrades')}</span><span className="num" style={{ fontSize: 18 }}>{stats.completed ?? 0}</span></div>
+          <div className="stat card" style={{ padding: 12 }}><span>{t('completionRate')}</span><span className="num t-green" style={{ fontSize: 18 }}>{stats.completionRate ?? '—'}{stats.completionRate != null ? '%' : ''}</span></div>
+          <div className="stat card" style={{ padding: 12 }}><span>{t('myPaymentAccounts')}</span><span className="num" style={{ fontSize: 18 }}>{accounts.data?.length ?? 0}</span></div>
+        </div>
+
+        <section className="card flush">
+          <Row icon="grid" tone="gold" label={t('myOffers')} to="/orders?tab=offers" />
+          <Row icon="card" tone="blue" label={t('myPaymentAccounts')} value={accounts.data?.map((a) => pm(a.method)).join('، ')} to="/profile/accounts" />
+        </section>
+
+        <section className="card flush">
+          <Row icon="moon" label={t('appearance')}>
+            <span className="seg sm">
+              <button type="button" aria-pressed={theme === 'dark'} onClick={() => setTheme('dark')}>{t('dark')}</button>
+              <button type="button" aria-pressed={theme === 'light'} onClick={() => setTheme('light')}>{t('light')}</button>
+            </span>
+          </Row>
+          <Row icon="globe" label={t('language')}>
+            <span className="seg sm">
+              <button type="button" aria-pressed={lang === 'fa'} onClick={() => setLang('fa')}>دری</button>
+              <button type="button" aria-pressed={lang === 'en'} onClick={() => setLang('en')}>English</button>
+            </span>
+          </Row>
+          <Row icon="shieldCheck" tone="green" label={t('security')} value={t('soon')} />
+          <Row icon="headset" label={t('support')} value={t('soon')} />
+        </section>
+
+        <button
+          type="button"
+          className="btn btn-danger"
+          style={{ height: 52 }}
+          onClick={async () => {
+            await logout()
+            await refresh()
+            navigate('/welcome', { replace: true })
+          }}
+        >
+          <Icon name="logout" size={18} />
+          {t('logout')}
+        </button>
+      </main>
+      <TabBar />
+    </>
+  )
+}

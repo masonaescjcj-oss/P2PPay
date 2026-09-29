@@ -45,6 +45,9 @@ Errors are `{"error": "<code>"}` with an HTTP status; the web app maps codes to 
 | GET | `/wallet` | user | balances, ledger, deposits, withdrawals |
 | POST | `/deposits` | user | `amount, txid` |
 | POST | `/withdrawals` | user | `amount, address` (TRC20) |
+| GET | `/payment-accounts` | user | – |
+| POST | `/payment-accounts` | user | `method, holderName, account` (upsert per method) |
+| POST | `/payment-accounts/:id/delete` | owner | – |
 | GET | `/offers` | public | `side=buy\|sell` (visitor's side), `paymentMethod?`, `fiat?` |
 | GET | `/offers/mine` | user | – |
 | GET | `/offers/:id` | public | – |
@@ -67,6 +70,8 @@ Errors are `{"error": "<code>"}` with an HTTP status; the web app maps codes to 
 | POST | `/admin/users/:id/block` | admin | `blocked` |
 
 Payment method codes: `hesabpay, mpaisa, mhawala, bank, hawala, cash`.
+
+A seller must have a payment account for every method of a sell offer (and a taker selling into a buy offer for the chosen method); the trade view shows the buyer the seller's `paymentAccount` for the chosen method.
 
 ## Known limitations (tracked in ROADMAP.md)
 
